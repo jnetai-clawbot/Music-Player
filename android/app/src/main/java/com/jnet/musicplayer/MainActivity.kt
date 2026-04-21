@@ -90,7 +90,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateMiniPlayer() {
         val song = MusicService.currentSong ?: run {
             binding.miniPlayer.visibility = View.GONE
-            return@run
+            return
         }
         binding.miniPlayer.visibility = View.VISIBLE
         binding.tvMiniTitle.text = song.displayTitle

@@ -81,7 +81,7 @@ class PlaylistDetailFragment : Fragment() {
             .setTitle("Remove Song")
             .setMessage("Remove \"${song.displayTitle}\" from this playlist?")
             .setPositiveButton("Remove") { _, _ ->
-                val mainActivity = activity as? MainActivity ?: return@PositiveButton
+                val mainActivity = activity as? MainActivity ?: return@setPositiveButton
                 val playlistRepo = mainActivity.playlistRepository
                 lifecycleScope.launch {
                     withContext(Dispatchers.IO) {

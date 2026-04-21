@@ -31,7 +31,7 @@ class PlaylistListFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        playlistRepo = (activity as? MainActivity)?.getPlaylistRepository() ?: return
+        playlistRepo = (activity as? MainActivity)?.playlistRepository ?: return
 
         adapter = PlaylistAdapter(emptyList(),
             onPlaylistClick = { playlist -> openPlaylist(playlist) },
