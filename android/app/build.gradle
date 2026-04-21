@@ -18,6 +18,15 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        release {
+            storeFile file('release.keystore')
+            storePassword 'JNetMusic2026'
+            keyAlias 'release'
+            keyPassword 'JNetMusic2026'
+        }
+    }
+
     buildTypes {
         debug {
             minifyEnabled false
@@ -28,15 +37,6 @@ android {
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
-        }
-    }
-
-    signingConfigs {
-        release {
-            storeFile file('release.keystore')
-            storePassword 'JNetMusic2026'
-            keyAlias 'release'
-            keyPassword 'JNetMusic2026'
         }
     }
 
