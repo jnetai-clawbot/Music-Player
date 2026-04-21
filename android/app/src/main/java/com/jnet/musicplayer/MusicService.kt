@@ -196,8 +196,8 @@ class MusicService : LifecycleService() {
                 setDataSource(this@MusicService, Uri.parse(song.path))
                 setOnPreparedListener { mp ->
                     mp.start()
-                    isPlaying = true
-                    duration = mp.duration
+                    Companion.isPlaying = true
+                    Companion.duration = mp.duration
                     onSongChanged?.invoke(song)
                     onPlaybackStateChanged?.invoke(true)
                     updateMediaSession()
