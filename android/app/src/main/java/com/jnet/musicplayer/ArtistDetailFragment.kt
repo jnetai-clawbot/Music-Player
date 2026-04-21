@@ -31,10 +31,13 @@ class ArtistDetailFragment : Fragment() {
 
         binding.tvArtistName.text = artistName
 
-        adapter = SongAdapter(songs) { song, index ->
-            val mainActivity = activity as? MainActivity ?: return@SongAdapter
-            mainActivity.playSong(songs, index)
-        }
+        adapter = SongAdapter(
+            onSongClick = { song, index ->
+                val mainActivity = activity as? MainActivity ?: return@SongAdapter
+                mainActivity.playSong(songs, index)
+            }
+        )
+        adapter.updateSongs(songs)
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
 

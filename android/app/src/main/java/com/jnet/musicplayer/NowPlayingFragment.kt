@@ -1,26 +1,19 @@
 package com.jnet.musicplayer
 
-import android.content.*
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageView
-import android.widget.Toast
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.jnet.musicplayer.databinding.FragmentNowPlayingBinding
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class NowPlayingFragment : Fragment() {
 
     private var _binding: FragmentNowPlayingBinding? = null
     private val binding get() = _binding!!
-    private var isServiceBound = false
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -31,7 +24,6 @@ class NowPlayingFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
         setupControls()
         observeServiceState()
         updateUI()
@@ -39,22 +31,14 @@ class NowPlayingFragment : Fragment() {
 
     private fun setupControls() {
         binding.btnPlayPause.setOnClickListener {
-            sendServiceAction(MusicService.ACTION_PLAY_PAUSE)
+            sendAction(MusicService.ACTION_PLAY_PAUSE)
         }
-
-        binding.btnNext.setOnClickListener {
-            sendServiceAction(MusicService.ACTION_NEXT)
-        }
-
-        binding.btnPrevious.setOnClickListener {
-            sendServiceAction(MusicService.ACTION_PREVIOUS)
-        }
-
+        binding.btnNext.setOnClickListener { sendAction(MusicService.ACTION_NEXT) }
+        binding.btnPrevious.setOnClickListener { sendAction(MusicService.ACTION_PREVIOUS) }
         binding.btnShuffle.setOnClickListener {
-            MusicService.toggleShuffle() // Direct since it's static
+            MusicService.toggleShuffle()
             updateShuffleButton()
         }
-
         binding.btnRepeat.setOnClickListener {
             MusicService.toggleRepeat()
             updateRepeatButton()
@@ -72,8 +56,8 @@ class NowPlayingFragment : Fragment() {
     }
 
     private fun observeServiceState() {
-        MusicService.onSongChanged = { song -> updateUI() }
-        MusicService.onPlaybackStateChanged = { isPlaying -> updatePlayPauseButton(isPlaying) }
+        MusicService.onSongChanged = { updateUI() }
+        MusicService.onPlaybackStateChanged = { updatePlayPauseButton(it) }
         MusicService.onPositionChanged = { position, duration -> updateSeekbar(position, duration) }
         MusicService.onShuffleChanged = { updateShuffleButton() }
         MusicService.onRepeatChanged = { updateRepeatButton() }
@@ -86,11 +70,8 @@ class NowPlayingFragment : Fragment() {
         binding.tvArtist.text = song.displayArtist
         binding.tvAlbum.text = song.album
 
-        // Load album art
-        val uri = android.content.ContentUris.withAppendedId(
-            Uri.parse("content://media/external/audio/albumart"),
-            song.albumId
-        )
+        val uri = Uri.parse("content://media/external/audio/albumart").buildUpon()
+            .appendPath(song.albumId.toString()).build()
         Glide.with(this)
             .load(uri)
             .placeholder(R.drawable.ic_music_note)
@@ -136,7 +117,7 @@ class NowPlayingFragment : Fragment() {
         }
     }
 
-    private fun sendServiceAction(action: String) {
+    private fun sendAction(action: String) {
         val intent = Intent(requireContext(), MusicService::class.java).apply {
             this.action = action
         }

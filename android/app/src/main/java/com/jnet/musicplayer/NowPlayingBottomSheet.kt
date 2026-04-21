@@ -6,13 +6,9 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import com.bumptech.glide.Glide
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.jnet.musicplayer.databinding.FragmentNowPlayingBinding
-import kotlinx.coroutines.Dispatchers
-import java.net.HttpURLConnection
-import java.net.URL
 
 class NowPlayingBottomSheet : BottomSheetDialogFragment() {
 
@@ -33,9 +29,7 @@ class NowPlayingBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun setupControls() {
-        binding.btnPlayPause.setOnClickListener {
-            sendAction(MusicService.ACTION_PLAY_PAUSE)
-        }
+        binding.btnPlayPause.setOnClickListener { sendAction(MusicService.ACTION_PLAY_PAUSE) }
         binding.btnNext.setOnClickListener { sendAction(MusicService.ACTION_NEXT) }
         binding.btnPrevious.setOnClickListener { sendAction(MusicService.ACTION_PREVIOUS) }
         binding.btnShuffle.setOnClickListener { MusicService.toggleShuffle(); updateShuffleButton() }
@@ -56,16 +50,14 @@ class NowPlayingBottomSheet : BottomSheetDialogFragment() {
         binding.tvArtist.text = song.displayArtist
         binding.tvAlbum.text = song.album
 
-        val uri = android.content.ContentUris.withAppendedId(
-            Uri.parse("content://media/external/audio/albumart"), song.albumId
-        )
+        val uri = Uri.parse("content://media/external/audio/albumart").buildUpon()
+            .appendPath(song.albumId.toString()).build()
         Glide.with(this).load(uri).placeholder(R.drawable.ic_music_note).into(binding.ivAlbumArt)
 
         updatePlayPauseButton(MusicService.isPlaying)
         updateShuffleButton()
         updateRepeatButton()
 
-        // Observe changes
         MusicService.onPlaybackStateChanged = { updatePlayPauseButton(it) }
         MusicService.onPositionChanged = { pos, dur -> updateSeekbar(pos, dur) }
         MusicService.onSongChanged = { updateUI() }
@@ -98,10 +90,10 @@ class NowPlayingBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun sendAction(action: String) {
-        Intent(requireContext(), MusicService::class.java).apply {
+        val intent = Intent(requireContext(), MusicService::class.java).apply {
             this.action = action
-            requireContext().startService(this)
         }
+        requireContext().startService(intent)
     }
 
     private fun formatTime(ms: Int): String {

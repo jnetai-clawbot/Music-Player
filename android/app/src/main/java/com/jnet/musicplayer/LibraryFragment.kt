@@ -9,6 +9,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
 import com.jnet.musicplayer.databinding.FragmentLibraryBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,7 +32,6 @@ class LibraryFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         adapter = SongAdapter(
-            songs = emptyList(),
             onSongClick = { song, index ->
                 val mainActivity = activity as? MainActivity ?: return@SongAdapter
                 mainActivity.playSong(songs, index)
@@ -43,7 +43,6 @@ class LibraryFragment : Fragment() {
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
 
-        // Listen for current song changes
         MusicService.onSongChanged = { song ->
             song?.id?.let { adapter.setCurrentPlaying(it) }
         }
@@ -57,7 +56,7 @@ class LibraryFragment : Fragment() {
 
     private fun showSongOptionsDialog(song: Song) {
         val mainActivity = activity as? MainActivity ?: return
-        val playlistRepo = mainActivity.getPlaylistRepository()
+        val playlistRepo = mainActivity.playlistRepository
 
         lifecycleScope.launch {
             val playlists = withContext(Dispatchers.IO) { playlistRepo.getAllPlaylists() }
@@ -107,7 +106,7 @@ class LibraryFragment : Fragment() {
     }
 
     private fun showCreatePlaylistDialog(song: Song, playlistRepo: PlaylistRepository) {
-        val input = android.widget.EditText(requireContext()).apply {
+        val input = TextInputEditText(requireContext()).apply {
             hint = "Playlist name"
         }
         MaterialAlertDialogBuilder(requireContext())

@@ -9,6 +9,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
 import com.jnet.musicplayer.databinding.FragmentPlaylistDetailBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -38,7 +39,7 @@ class PlaylistDetailFragment : Fragment() {
 
         binding.tvPlaylistName.text = playlistName
 
-        adapter = SongAdapter(emptyList(),
+        adapter = SongAdapter(
             onSongClick = { song, index ->
                 val mainActivity = activity as? MainActivity ?: return@SongAdapter
                 mainActivity.playSong(playlistSongs, index)
@@ -60,8 +61,8 @@ class PlaylistDetailFragment : Fragment() {
     private fun loadPlaylistSongs() {
         if (playlistId < 0) return
         val mainActivity = activity as? MainActivity ?: return
-        val playlistRepo = mainActivity.getPlaylistRepository()
-        val allSongs = mainActivity.getAllSongs()
+        val playlistRepo = mainActivity.playlistRepository
+        val allSongs = mainActivity.allSongs
 
         lifecycleScope.launch {
             val playlistSongEntries = withContext(Dispatchers.IO) {
@@ -81,7 +82,7 @@ class PlaylistDetailFragment : Fragment() {
             .setMessage("Remove \"${song.displayTitle}\" from this playlist?")
             .setPositiveButton("Remove") { _, _ ->
                 val mainActivity = activity as? MainActivity ?: return@PositiveButton
-                val playlistRepo = mainActivity.getPlaylistRepository()
+                val playlistRepo = mainActivity.playlistRepository
                 lifecycleScope.launch {
                     withContext(Dispatchers.IO) {
                         playlistRepo.removeSongFromPlaylist(playlistId, song.id)

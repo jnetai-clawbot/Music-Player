@@ -2,14 +2,10 @@ package com.jnet.musicplayer
 
 import android.app.*
 import android.content.*
-import android.graphics.Bitmap
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.media.MediaMetadata
 import android.media.MediaPlayer
-import android.media.session.MediaSession
-import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -17,13 +13,12 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
-import com.bumptech.glide.Glide
 import kotlinx.coroutines.*
 import java.io.IOException
-import java.util.*
 
 class MusicService : LifecycleService() {
 
@@ -41,7 +36,6 @@ class MusicService : LifecycleService() {
         var isRunning = false
             private set
 
-        // Shared state for UI binding
         var currentSong: Song? = null
             private set
         var isPlaying = false
@@ -60,6 +54,29 @@ class MusicService : LifecycleService() {
         var onPositionChanged: ((Int, Int) -> Unit)? = null
         var onShuffleChanged: ((Boolean) -> Unit)? = null
         var onRepeatChanged: ((RepeatMode) -> Unit)? = null
+
+        // Direct control methods (called via intent or from UI)
+        fun toggleShuffle() {
+            shuffleEnabled = !shuffleEnabled
+            onShuffleChanged?.invoke(shuffleEnabled)
+        }
+
+        fun toggleRepeat() {
+            repeatMode = when (repeatMode) {
+                RepeatMode.OFF -> RepeatMode.ALL
+                RepeatMode.ALL -> RepeatMode.ONE
+                RepeatMode.ONE -> RepeatMode.OFF
+            }
+            onRepeatChanged?.invoke(repeatMode)
+        }
+
+        fun seekTo(position: Int) {
+            // This is called from UI - the actual service instance handles it
+            // via the _instance reference
+            _instance?.mediaPlayer?.seekTo(position)
+        }
+
+        private var _instance: MusicService? = null
     }
 
     enum class RepeatMode { OFF, ALL, ONE }
@@ -69,19 +86,21 @@ class MusicService : LifecycleService() {
     private var songs: List<Song> = emptyList()
     private var currentIndex: Int = 0
     private var shuffledIndices: MutableList<Int> = mutableListOf()
+    private var shufflePointer: Int = 0
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
-    private var progressJob: Job? = null
     private var wasPlayingBeforeFocusLoss = false
+    private var progressJob: Job? = null
 
     private val binder = MusicBinder()
 
-    inner class MusicBinder : Binder() {
+    inner class MusicBinder : android.os.Binder() {
         fun getService(): MusicService = this@MusicService
     }
 
     override fun onCreate() {
         super.onCreate()
+        _instance = this
         isRunning = true
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         createNotificationChannel()
@@ -95,17 +114,23 @@ class MusicService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
-        when (intent?.action) {
+        val action = intent?.action
+        when (action) {
             ACTION_PLAY_PAUSE -> togglePlayPause()
             ACTION_NEXT -> playNext()
             ACTION_PREVIOUS -> playPrevious()
             ACTION_STOP -> {
                 stopSelf()
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
             }
             else -> {
                 // Initial play request
-                if (intent.hasExtra(EXTRA_SONG_LIST)) {
+                if (intent != null && intent.hasExtra(EXTRA_SONG_LIST)) {
                     @Suppress("DEPRECATION")
                     val songList = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         intent.getParcelableArrayListExtra(EXTRA_SONG_LIST, Song::class.java)
@@ -136,6 +161,7 @@ class MusicService : LifecycleService() {
         isRunning = false
         currentSong = null
         isPlaying = false
+        _instance = null
         onSongChanged = null
         onPlaybackStateChanged = null
         onPositionChanged = null
@@ -244,37 +270,17 @@ class MusicService : LifecycleService() {
         playSong(prevIndex)
     }
 
-    fun seekTo(position: Int) {
-        mediaPlayer?.seekTo(position)
-    }
-
-    fun toggleShuffle() {
-        shuffleEnabled = !shuffleEnabled
-        if (shuffleEnabled) buildShuffleList()
-        onShuffleChanged?.invoke(shuffleEnabled)
-    }
-
-    fun toggleRepeat() {
-        repeatMode = when (repeatMode) {
-            RepeatMode.OFF -> RepeatMode.ALL
-            RepeatMode.ALL -> RepeatMode.ONE
-            RepeatMode.ONE -> RepeatMode.OFF
-        }
-        onRepeatChanged?.invoke(repeatMode)
-    }
-
     // --- Shuffle Helpers ---
 
     private fun buildShuffleList() {
-        shuffledIndices = (songs.indices.toMutableList() - currentIndex).shuffled().toMutableList()
+        shuffledIndices = ((songs.indices.toSet() - currentIndex).shuffled().toMutableList())
         shuffledIndices.add(0, currentIndex)
+        shufflePointer = 0
     }
-
-    private var shufflePointer = 0
 
     private fun getNextShuffledIndex(): Int {
         if (shuffledIndices.isEmpty()) buildShuffleList()
-        shufflePointer = (shuffledPointer + 1).coerceAtMost(shuffledIndices.size - 1)
+        shufflePointer = (shufflePointer + 1).coerceAtMost(shuffledIndices.size - 1)
         if (shufflePointer >= shuffledIndices.size - 1 && repeatMode == RepeatMode.ALL) {
             buildShuffleList()
             shufflePointer = 0
@@ -318,50 +324,41 @@ class MusicService : LifecycleService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setOnAudioFocusChangeListener { focusChange ->
-                    when (focusChange) {
-                        AudioManager.AUDIOFOCUS_LOSS -> {
-                            wasPlayingBeforeFocusLoss = mediaPlayer?.isPlaying ?: false
-                            mediaPlayer?.pause()
-                            isPlaying = false
-                            onPlaybackStateChanged?.invoke(false)
-                        }
-                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                            wasPlayingBeforeFocusLoss = mediaPlayer?.isPlaying ?: false
-                            mediaPlayer?.pause()
-                            isPlaying = false
-                            onPlaybackStateChanged?.invoke(false)
-                        }
-                        AudioManager.AUDIOFOCUS_GAIN -> {
-                            if (wasPlayingBeforeFocusLoss) {
-                                mediaPlayer?.start()
-                                isPlaying = true
-                                onPlaybackStateChanged?.invoke(true)
-                            }
-                        }
-                    }
+                    handleAudioFocusChange(focusChange)
                 }
                 .build()
             audioManager?.requestAudioFocus(audioFocusRequest!!)
         } else {
             @Suppress("DEPRECATION")
             audioManager?.requestAudioFocus(
-                { focusChange ->
-                    if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
-                        if (wasPlayingBeforeFocusLoss) {
-                            mediaPlayer?.start()
-                            isPlaying = true
-                            onPlaybackStateChanged?.invoke(true)
-                        }
-                    } else {
-                        wasPlayingBeforeFocusLoss = mediaPlayer?.isPlaying ?: false
-                        mediaPlayer?.pause()
-                        isPlaying = false
-                        onPlaybackStateChanged?.invoke(false)
-                    }
-                },
+                { focusChange -> handleAudioFocusChange(focusChange) },
                 AudioManager.STREAM_MUSIC,
                 AudioManager.AUDIOFOCUS_GAIN
             )
+        }
+    }
+
+    private fun handleAudioFocusChange(focusChange: Int) {
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                wasPlayingBeforeFocusLoss = mediaPlayer?.isPlaying ?: false
+                mediaPlayer?.pause()
+                isPlaying = false
+                onPlaybackStateChanged?.invoke(false)
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                wasPlayingBeforeFocusLoss = mediaPlayer?.isPlaying ?: false
+                mediaPlayer?.pause()
+                isPlaying = false
+                onPlaybackStateChanged?.invoke(false)
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                if (wasPlayingBeforeFocusLoss) {
+                    mediaPlayer?.start()
+                    isPlaying = true
+                    onPlaybackStateChanged?.invoke(true)
+                }
+            }
         }
     }
 
@@ -383,7 +380,7 @@ class MusicService : LifecycleService() {
                 override fun onPause() { togglePlayPause() }
                 override fun onSkipToNext() { playNext() }
                 override fun onSkipToPrevious() { playPrevious() }
-                override fun onSeekTo(pos: Long) { seekTo(pos.toInt()) }
+                override fun onSeekTo(pos: Long) { mediaPlayer?.seekTo(pos.toInt()) }
             })
             isActive = true
         }
@@ -392,19 +389,19 @@ class MusicService : LifecycleService() {
     private fun updateMediaSession() {
         val song = currentSong ?: return
         val metadata = MediaMetadataCompat.Builder()
-            .putString(MediaMetadata.METADATA_KEY_TITLE, song.displayTitle)
-            .putString(MediaMetadata.METADATA_KEY_ARTIST, song.displayArtist)
-            .putString(MediaMetadata.METADATA_KEY_ALBUM, song.album)
-            .putLong(MediaMetadata.METADATA_KEY_DURATION, song.duration)
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, song.displayTitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, song.displayArtist)
+            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, song.album)
+            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, song.duration)
             .build()
         mediaSession?.setMetadata(metadata)
 
-        val state = if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
-        val playbackState = PlaybackState.Builder()
+        val state = if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
+        val playbackState = PlaybackStateCompat.Builder()
             .setActions(
-                PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
-                PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or
-                PlaybackState.ACTION_SEEK_TO
+                PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE or
+                PlaybackStateCompat.ACTION_SKIP_TO_NEXT or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                PlaybackStateCompat.ACTION_SEEK_TO
             )
             .setState(state, mediaPlayer?.currentPosition?.toLong() ?: 0, 1f)
             .build()
@@ -440,11 +437,8 @@ class MusicService : LifecycleService() {
         val prevIntent = Intent(this, NotificationReceiver::class.java).apply {
             action = ACTION_PREVIOUS
         }
-        val stopIntent = Intent(this, NotificationReceiver::class.java).apply {
-            action = ACTION_STOP
-        }
 
-        val playPauseFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+        val flag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         else PendingIntent.FLAG_UPDATE_CURRENT
 
@@ -456,17 +450,17 @@ class MusicService : LifecycleService() {
             .addAction(
                 R.drawable.ic_skip_previous,
                 "Previous",
-                PendingIntent.getBroadcast(this, 0, prevIntent, playPauseFlag)
+                PendingIntent.getBroadcast(this, 0, prevIntent, flag)
             )
             .addAction(
                 if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play,
                 if (isPlaying) "Pause" else "Play",
-                PendingIntent.getBroadcast(this, 1, playPauseIntent, playPauseFlag)
+                PendingIntent.getBroadcast(this, 1, playPauseIntent, flag)
             )
             .addAction(
                 R.drawable.ic_skip_next,
                 "Next",
-                PendingIntent.getBroadcast(this, 2, nextIntent, playPauseFlag)
+                PendingIntent.getBroadcast(this, 2, nextIntent, flag)
             )
             .setStyle(
                 androidx.media.app.NotificationCompat.MediaStyle()

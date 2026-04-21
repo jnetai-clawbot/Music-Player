@@ -6,13 +6,14 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.tabs.TabLayoutMediator
 import com.jnet.musicplayer.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -77,7 +78,6 @@ class MainActivity : AppCompatActivity() {
             sendServiceAction(MusicService.ACTION_NEXT)
         }
 
-        // Observe service state
         MusicService.onSongChanged = { updateMiniPlayer() }
         MusicService.onPlaybackStateChanged = { updateMiniPlayerPlayButton() }
     }
@@ -90,7 +90,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateMiniPlayer() {
         val song = MusicService.currentSong ?: run {
             binding.miniPlayer.visibility = View.GONE
-            return
+            return@run
         }
         binding.miniPlayer.visibility = View.VISIBLE
         binding.tvMiniTitle.text = song.displayTitle
@@ -173,24 +173,13 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onQueryTextChange(newText: String?): Boolean {
-                if (newText.isNullOrBlank()) {
-                    // Refresh current fragment
-                }
                 return true
             }
         })
         return true
     }
 
-    private fun performSearch(query: String) {
-        lifecycleScope.launch {
-            val results = musicRepository.searchSongs(query)
-            // Navigate to songs tab and update
-            binding.viewPager.currentItem = 0
-        }
-    }
-
-    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             R.id.action_about -> {
                 val aboutFragment = AboutFragment()
@@ -201,9 +190,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun performSearch(query: String) {
+        lifecycleScope.launch {
+            val results = musicRepository.searchSongs(query)
+            // Could update a search results fragment here
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        // Reset callbacks
         MusicService.onSongChanged = null
         MusicService.onPlaybackStateChanged = null
     }

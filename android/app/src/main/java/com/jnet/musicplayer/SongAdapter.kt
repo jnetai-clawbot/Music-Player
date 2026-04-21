@@ -7,9 +7,11 @@ import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.jnet.musicplayer.databinding.ItemSongBinding
 
+typealias SongClickHandler = (Song, Int) -> Unit
+
 class SongAdapter(
     private var songs: List<Song> = emptyList(),
-    private val onSongClick: (Song, Int) -> Unit,
+    private val onSongClick: SongClickHandler,
     private val onSongLongClick: ((Song) -> Unit)? = null
 ) : RecyclerView.Adapter<SongAdapter.SongViewHolder>() {
 
@@ -31,14 +33,12 @@ class SongAdapter(
             tvArtist.text = song.displayArtist
             tvDuration.text = song.displayDuration
 
-            // Highlight currently playing song
             if (song.id == currentPlayingId) {
                 tvTitle.setTextColor(root.context.getColor(R.color.md_theme_primary))
             } else {
                 tvTitle.setTextColor(root.context.getColor(R.color.md_theme_onSurface))
             }
 
-            // Load album art
             loadAlbumArt(ivAlbumArt, song.albumId)
 
             root.setOnClickListener { onSongClick(song, position) }
