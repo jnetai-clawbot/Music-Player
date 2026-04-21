@@ -1,23 +1,18 @@
 package com.jnet.musicplayer
 
 import android.Manifest
-import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.view.Menu
-import android.view.MenuItem
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.tabs.TabLayoutMediator
 import com.jnet.musicplayer.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -27,10 +22,10 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var musicRepository: MusicRepository
-    private lateinit var playlistRepository: PlaylistRepository
-    private lateinit var pagerAdapter: MusicPagerAdapter
+    lateinit var playlistRepository: PlaylistRepository
 
-    private var allSongs = emptyList<Song>()
+    var allSongs: List<Song> = emptyList()
+        private set
 
     private val permissionRequest = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -52,12 +47,13 @@ class MainActivity : AppCompatActivity() {
         playlistRepository = PlaylistRepository(this)
 
         setupViewPager()
+        setupMiniPlayer()
         checkPermissionsAndLoad()
     }
 
     private fun setupViewPager() {
-        pagerAdapter = MusicPagerAdapter(this)
-        binding.viewPager.adapter = pagerAdapter
+        val adapter = MusicPagerAdapter(this)
+        binding.viewPager.adapter = adapter
 
         TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
             tab.text = when (position) {
@@ -68,6 +64,61 @@ class MainActivity : AppCompatActivity() {
                 else -> ""
             }
         }.attach()
+    }
+
+    private fun setupMiniPlayer() {
+        binding.miniPlayer.setOnClickListener {
+            showNowPlaying()
+        }
+        binding.btnMiniPlayPause.setOnClickListener {
+            sendServiceAction(MusicService.ACTION_PLAY_PAUSE)
+        }
+        binding.btnMiniNext.setOnClickListener {
+            sendServiceAction(MusicService.ACTION_NEXT)
+        }
+
+        // Observe service state
+        MusicService.onSongChanged = { updateMiniPlayer() }
+        MusicService.onPlaybackStateChanged = { updateMiniPlayerPlayButton() }
+    }
+
+    private fun showNowPlaying() {
+        val bottomSheet = NowPlayingBottomSheet()
+        bottomSheet.show(supportFragmentManager, "now_playing")
+    }
+
+    private fun updateMiniPlayer() {
+        val song = MusicService.currentSong ?: run {
+            binding.miniPlayer.visibility = View.GONE
+            return
+        }
+        binding.miniPlayer.visibility = View.VISIBLE
+        binding.tvMiniTitle.text = song.displayTitle
+        binding.tvMiniArtist.text = song.displayArtist
+
+        val uri = android.content.ContentUris.withAppendedId(
+            android.net.Uri.parse("content://media/external/audio/albumart"),
+            song.albumId
+        )
+        com.bumptech.glide.Glide.with(this)
+            .load(uri)
+            .placeholder(R.drawable.ic_music_note)
+            .into(binding.ivMiniAlbumArt)
+
+        updateMiniPlayerPlayButton()
+    }
+
+    private fun updateMiniPlayerPlayButton() {
+        binding.btnMiniPlayPause.setImageResource(
+            if (MusicService.isPlaying) R.drawable.ic_pause else R.drawable.ic_play
+        )
+    }
+
+    private fun sendServiceAction(action: String) {
+        val intent = Intent(this, MusicService::class.java).apply {
+            this.action = action
+        }
+        startService(intent)
     }
 
     private fun checkPermissionsAndLoad() {
@@ -95,22 +146,11 @@ class MainActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 binding.progressBar.visibility = View.GONE
                 if (allSongs.isEmpty()) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "No music found on device",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    Toast.makeText(this@MainActivity, "No music found on device", Toast.LENGTH_LONG).show()
                 }
-                // Pass songs to fragments
-                pagerAdapter.updateSongs(allSongs)
             }
         }
     }
-
-    fun getAllSongs() = allSongs
-
-    fun getMusicRepository() = musicRepository
-    fun getPlaylistRepository() = playlistRepository
 
     fun playSong(songList: List<Song>, index: Int) {
         val intent = Intent(this, MusicService::class.java).apply {
@@ -134,7 +174,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onQueryTextChange(newText: String?): Boolean {
                 if (newText.isNullOrBlank()) {
-                    pagerAdapter.updateSongs(allSongs)
+                    // Refresh current fragment
                 }
                 return true
             }
@@ -142,30 +182,29 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+    private fun performSearch(query: String) {
+        lifecycleScope.launch {
+            val results = musicRepository.searchSongs(query)
+            // Navigate to songs tab and update
+            binding.viewPager.currentItem = 0
+        }
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
         return when (item.itemId) {
             R.id.action_about -> {
-                showAboutDialog()
+                val aboutFragment = AboutFragment()
+                aboutFragment.show(supportFragmentManager, "about")
                 true
             }
             else -> super.onOptionsItemSelected(item)
         }
     }
 
-    private fun performSearch(query: String) {
-        lifecycleScope.launch {
-            val results = musicRepository.searchSongs(query)
-            pagerAdapter.updateSearchResults(results)
-        }
-    }
-
-    private fun showAboutDialog() {
-        val aboutFragment = AboutFragment()
-        aboutFragment.show(supportFragmentManager, "about")
-    }
-
     override fun onDestroy() {
         super.onDestroy()
-        // Don't stop service - let it continue playing
+        // Reset callbacks
+        MusicService.onSongChanged = null
+        MusicService.onPlaybackStateChanged = null
     }
 }

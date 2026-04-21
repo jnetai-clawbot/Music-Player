@@ -2,9 +2,10 @@
 <androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/rootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/md_theme_surface">
+    android:background="@color/md_theme_background">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -36,11 +37,18 @@
             app:tabSelectedTextColor="@color/md_theme_primary"
             app:tabTextColor="@color/md_theme_onSurfaceVariant" />
 
-        <androidx.viewpager2.widget.ViewPager2
-            android:id="@+id/viewPager"
+        <FrameLayout
+            android:id="@+id/fragmentContainer"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1" />
+            android:layout_weight="1">
+
+            <androidx.viewpager2.widget.ViewPager2
+                android:id="@+id/viewPager"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+        </FrameLayout>
 
         <!-- Mini player at bottom -->
         <LinearLayout
@@ -59,6 +67,7 @@
                 android:id="@+id/ivMiniAlbumArt"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
+                android:scaleType="centerCrop"
                 android:src="@drawable/ic_music_note" />
 
             <LinearLayout
@@ -108,10 +117,5 @@
         </LinearLayout>
 
     </LinearLayout>
-
-    <FrameLayout
-        android:id="@+id/fragmentContainer"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
