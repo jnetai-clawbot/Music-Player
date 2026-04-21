@@ -1,0 +1,10 @@
+v1.0.0 - Initial Release
+- Music library scanning via MediaStore API
+- Browse by Songs, Artists, Albums, Playlists
+- Now Playing screen with album art, controls, seek bar
+- Shuffle and repeat modes
+- Background playback with notification controls
+- Search songs, artists, albums
+- Create and manage playlists (Room database)
+- Dark theme with Material Design 3
+- About section with version info, update checker, and share

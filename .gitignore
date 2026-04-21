@@ -1,0 +1,18 @@
+# Build artifacts
+android/.gradle/
+android/app/build/
+android/build/
+*.apk
+*.aab
+
+# IDE
+.idea/
+*.iml
+.local/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Room schemas (generated)
+android/app/schemas/

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">JNet Music Player</string>
+    <string name="search_hint">Search songs, artists, albums…</string>
+    <string name="no_songs">No songs found</string>
+    <string name="no_artists">No artists found</string>
+    <string name="no_albums">No albums found</string>
+    <string name="no_playlists">No playlists yet</string>
+    <string name="about_title">About</string>
+    <string name="tab_songs">Songs</string>
+    <string name="tab_artists">Artists</string>
+    <string name="tab_albums">Albums</string>
+    <string name="tab_playlists">Playlists</string>
+
+    <plurals name="song_count">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
+</resources>
