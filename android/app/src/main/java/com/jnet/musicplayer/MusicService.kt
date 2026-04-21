@@ -39,15 +39,10 @@ class MusicService : LifecycleService() {
         var currentSong: Song? = null
             private set
         var isPlaying = false
-            internal set
         var currentPosition: Int = 0
-            internal set
         var duration: Int = 0
-            internal set
         var shuffleEnabled = false
-            internal set
         var repeatMode: RepeatMode = RepeatMode.OFF
-            internal set
 
         var onSongChanged: ((Song?) -> Unit)? = null
         var onPlaybackStateChanged: ((Boolean) -> Unit)? = null
