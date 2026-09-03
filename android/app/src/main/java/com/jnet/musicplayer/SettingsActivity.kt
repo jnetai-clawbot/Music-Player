@@ -36,7 +36,7 @@ class SettingsActivity : AppCompatActivity() {
                 runCatching {
                     contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) }
                 }
-                Toast.makeText(this, "Playlists exported", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@SettingsActivity, "Playlists exported", Toast.LENGTH_SHORT).show()
             }
         }
     }

@@ -55,7 +55,7 @@ object PlaylistIO {
                 addedPlaylists += 1
             }
 
-            val present = repo.getPlaylistSongs(playlistId).map { it.songId }.toSet()
+            val present = repo.getPlaylistSongs(playlistId).map { it.songId }.toMutableSet()
             var order = repo.getPlaylistSongs(playlistId).size
 
             for (j in 0 until songIds.length()) {
