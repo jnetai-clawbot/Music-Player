@@ -1,3 +1,19 @@
+v1.1.0 - Settings, Scan, Crossfade & About fixes
+- Searchable Settings screen (playback + scanning options)
+- Crossfade between tracks (on by default, configurable duration) - no silence between songs
+- Auto repeat playlist (plays again from start at end) - on by default
+- Playback speed control
+- Pause when headphones unplugged
+- Keep screen on while playing
+- Scan tab & Scan button: finds new music using settings filters, whole phone fallback (1 min+, MP3)
+- Library persisted in a songs database; add new without rescanning everything
+- Only scan MP3 toggle (on by default)
+- Minimum track length setting (default 1 minute)
+- Include / exclude folder path settings for scanning
+- Scan on app start setting
+- About section fixed: Made by jnetai.com, latest release version, share latest release, update check
+- Settings entries opened from toolbar gear
+
 v1.0.0 - Initial Release
 - Music library scanning via MediaStore API
 - Browse by Songs, Artists, Albums, Playlists

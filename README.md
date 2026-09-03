@@ -1,4 +1,4 @@
-# JNet Music Player
+# J-Net-Android-Music-Player
 
 A simple, beautiful music player for Android built with Kotlin and Material Design 3.
 

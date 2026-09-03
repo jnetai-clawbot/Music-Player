@@ -6,7 +6,7 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 
 class MusicPagerAdapter(activity: AppCompatActivity) : FragmentStateAdapter(activity) {
 
-    override fun getItemCount() = 4
+    override fun getItemCount() = 5
 
     override fun createFragment(position: Int): Fragment {
         return when (position) {
@@ -14,6 +14,7 @@ class MusicPagerAdapter(activity: AppCompatActivity) : FragmentStateAdapter(acti
             1 -> ArtistListFragment()
             2 -> AlbumListFragment()
             3 -> PlaylistListFragment()
+            4 -> ScanFragment()
             else -> LibraryFragment()
         }
     }

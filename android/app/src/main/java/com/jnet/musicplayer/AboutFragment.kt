@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.jnet.musicplayer.databinding.FragmentAboutBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +23,10 @@ class AboutFragment : BottomSheetDialogFragment() {
     private var _binding: FragmentAboutBinding? = null
     private val binding get() = _binding!!
 
+    private val githubLatestReleaseUrl = "https://github.com/jnetai-clawbot/Music-Player/releases/latest"
+    private var latestTag: String? = null
+    private var latestHtmlUrl: String = githubLatestReleaseUrl
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -32,96 +37,113 @@ class AboutFragment : BottomSheetDialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // Get version from PackageInfo
-        try {
-            val packageInfo = requireContext().packageManager
-                .getPackageInfo(requireContext().packageName, 0)
-            binding.tvVersion.text = "Version ${packageInfo.versionName} (${packageInfo.longVersionCode})"
-        } catch (e: Exception) {
-            binding.tvVersion.text = "Version 1.0.0"
-        }
-
         binding.tvAppName.text = "JNet Music Player"
-        binding.tvDescription.text = "A simple, beautiful music player for your local music library."
+        binding.tvMadeBy.text = "Made by jnetai.com"
 
-        // GitHub link
+        // Local version (versionName) - the tag "vX.Y.Z" matches the GitHub release tag
+        val localVersion = try {
+            requireContext().packageManager
+                .getPackageInfo(requireContext().packageName, 0)
+                .versionName?.let { if (it.startsWith("v")) it else "v$it" } ?: "v1.1.0"
+        } catch (e: Exception) {
+            "v1.1.0"
+        }
+        binding.tvVersion.text = "Version $localVersion"
+
+        binding.btnCheckUpdates.setOnClickListener { checkForUpdates() }
+        binding.btnShare.setOnClickListener { shareLatestRelease() }
         binding.btnGitHub.setOnClickListener {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/jnetai-clawbot/Music-Player"))
-            startActivity(intent)
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(githubLatestReleaseUrl)))
         }
 
-        // Check for updates
-        binding.btnCheckUpdates.setOnClickListener {
-            checkForUpdates()
-        }
-
-        // Share
-        binding.btnShare.setOnClickListener {
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_SUBJECT, "JNet Music Player")
-                putExtra(Intent.EXTRA_TEXT, "Check out JNet Music Player! https://github.com/jnetai-clawbot/Music-Player")
+        // Pre-fetch latest release so the version footer and share are accurate,
+        // and the update button has data when tapped.
+        CoroutineScope(Dispatchers.IO).launch {
+            val tag = fetchLatestTag()
+            withContext(Dispatchers.Main) {
+                if (tag != null && tag.isNotBlank()) {
+                    latestTag = tag
+                    binding.tvVersion.text = "Version $localVersion · Latest $tag"
+                }
             }
-            startActivity(Intent.createChooser(shareIntent, "Share via"))
         }
     }
 
     private fun checkForUpdates() {
         binding.btnCheckUpdates.isEnabled = false
         binding.btnCheckUpdates.text = "Checking..."
-
         CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val url = URL("https://api.github.com/repos/jnetai-clawbot/Music-Player/releases/latest")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "GET"
-                conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
-
-                val response = conn.inputStream.bufferedReader().readText()
-                val json = JSONObject(response)
-                val latestVersion = json.optString("tag_name", "unknown")
-                val htmlUrl = json.optString("html_url", "")
-                val releaseName = json.optString("name", latestVersion)
-
-                withContext(Dispatchers.Main) {
-                    try {
-                        val packageInfo = requireContext().packageManager
-                            .getPackageInfo(requireContext().packageName, 0)
-                        val currentVersion = packageInfo.versionName
-
-                        if (latestVersion != currentVersion && latestVersion != "unknown") {
-                            Toast.makeText(
-                                requireContext(),
-                                "Update available: $releaseName\nDownload from GitHub",
-                                Toast.LENGTH_LONG
-                            ).show()
-                            // Open release page
-                            if (htmlUrl.isNotEmpty()) {
-                                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(htmlUrl)))
-                            }
-                        } else {
-                            Toast.makeText(requireContext(), "You're on the latest version!", Toast.LENGTH_SHORT).show()
-                        }
-                    } catch (e: Exception) {
-                        Toast.makeText(requireContext(), "Version check complete", Toast.LENGTH_SHORT).show()
-                    }
-                    binding.btnCheckUpdates.isEnabled = true
-                    binding.btnCheckUpdates.text = "Check for Updates"
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
+            val fetched = fetchLatestTag()
+            withContext(Dispatchers.Main) {
+                val latest = latestTag ?: fetched
+                binding.btnCheckUpdates.isEnabled = true
+                binding.btnCheckUpdates.text = "Check for Updates"
+                if (latest.isNullOrBlank()) {
                     Toast.makeText(
                         requireContext(),
                         "Could not check for updates. Check your internet connection.",
                         Toast.LENGTH_SHORT
                     ).show()
-                    binding.btnCheckUpdates.isEnabled = true
-                    binding.btnCheckUpdates.text = "Check for Updates"
+                    return@withContext
+                }
+                val current = try {
+                    requireContext().packageManager
+                        .getPackageInfo(requireContext().packageName, 0)
+                        .versionName?.let { if (it.startsWith("v")) it else "v$it" } ?: ""
+                } catch (e: Exception) {
+                    ""
+                }
+                if (isNewer(latest, current)) {
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setTitle("Update available")
+                        .setMessage("A new version ($latest) is available.\nOpen it on GitHub?")
+                        .setPositiveButton("Open on GitHub") { _, _ ->
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(latestHtmlUrl)))
+                        }
+                        .setNegativeButton("Not now", null)
+                        .show()
+                } else {
+                    Toast.makeText(requireContext(), "You're on the latest version!", Toast.LENGTH_SHORT).show()
                 }
             }
         }
+    }
+
+    private fun shareLatestRelease() {
+        val text = "JNet Music Player (latest release) - $latestHtmlUrl"
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "JNet Music Player")
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(shareIntent, "Share latest release"))
+    }
+
+    /** Fetches latest release tag_name + html_url. */
+    private fun fetchLatestTag(): String? = try {
+        val url = URL("https://api.github.com/repos/jnetai-clawbot/Music-Player/releases/latest")
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "GET"
+        conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
+        conn.connectTimeout = 10000
+        conn.readTimeout = 10000
+        val response = conn.inputStream.bufferedReader().readText()
+        val json = JSONObject(response)
+        latestHtmlUrl = json.optString("html_url", githubLatestReleaseUrl)
+        json.optString("tag_name", "").ifBlank { null }
+    } catch (e: Exception) {
+        null
+    }
+
+    private fun isNewer(latest: String, current: String): Boolean {
+        val latestNum = latest.removePrefix("v").split(".").mapNotNull { it.toIntOrNull() }
+        val currentNum = current.removePrefix("v").split(".").mapNotNull { it.toIntOrNull() }
+        for (i in 0 until maxOf(latestNum.size, currentNum.size)) {
+            val l = latestNum.getOrElse(i) { 0 }
+            val c = currentNum.getOrElse(i) { 0 }
+            if (l != c) return l > c
+        }
+        return false
     }
 
     override fun onDestroyView() {

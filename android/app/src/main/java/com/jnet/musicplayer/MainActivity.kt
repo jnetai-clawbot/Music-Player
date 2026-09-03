@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -21,12 +22,27 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
+    interface SongsConsumer {
+        fun onLibraryChanged(songs: List<Song>)
+    }
+
     private lateinit var binding: ActivityMainBinding
-    private lateinit var musicRepository: MusicRepository
+    lateinit var musicRepository: MusicRepository
     lateinit var playlistRepository: PlaylistRepository
+    lateinit var settingsRepository: SettingsRepository
 
     var allSongs: List<Song> = emptyList()
         private set
+
+    private val songsConsumers = mutableListOf<SongsConsumer>()
+
+    fun registerSongsConsumer(consumer: SongsConsumer) {
+        if (!songsConsumers.contains(consumer)) songsConsumers.add(consumer)
+    }
+
+    fun unregisterSongsConsumer(consumer: SongsConsumer) {
+        songsConsumers.remove(consumer)
+    }
 
     private val permissionRequest = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -41,11 +57,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        companionInstance = this
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
         musicRepository = MusicRepository(this)
         playlistRepository = PlaylistRepository(this)
+        settingsRepository = SettingsRepository(this)
 
         setupViewPager()
         setupMiniPlayer()
@@ -62,6 +80,7 @@ class MainActivity : AppCompatActivity() {
                 1 -> "Artists"
                 2 -> "Albums"
                 3 -> "Playlists"
+                4 -> "Scan"
                 else -> ""
             }
         }.attach()
@@ -79,7 +98,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         MusicService.onSongChanged = { updateMiniPlayer() }
-        MusicService.onPlaybackStateChanged = { updateMiniPlayerPlayButton() }
+        MusicService.onPlaybackStateChanged = {
+            updateMiniPlayerPlayButton()
+            applyKeepScreen()
+        }
+    }
+
+    private fun applyKeepScreen() {
+        val keep = settingsRepository.get().keepScreenOn && MusicService.isPlaying
+        if (keep) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     private fun showNowPlaying() {
@@ -142,13 +173,33 @@ class MainActivity : AppCompatActivity() {
     private fun loadMusic() {
         binding.progressBar.visibility = View.VISIBLE
         lifecycleScope.launch {
-            allSongs = musicRepository.getAllSongs()
-            withContext(Dispatchers.Main) {
-                binding.progressBar.visibility = View.GONE
-                if (allSongs.isEmpty()) {
-                    Toast.makeText(this@MainActivity, "No music found on device", Toast.LENGTH_LONG).show()
+            allSongs = withContext(Dispatchers.IO) {
+                val songs = musicRepository.getAllSongs()
+                if (songs.isEmpty() && settingsRepository.get().scanOnStartup) {
+                    musicRepository.scanForNewMusic()
+                    musicRepository.getAllSongs()
+                } else {
+                    songs
                 }
             }
+            withContext(Dispatchers.Main) {
+                binding.progressBar.visibility = View.GONE
+                pushSongsToConsumers()
+                if (allSongs.isEmpty()) {
+                    Toast.makeText(this@MainActivity, "No music found - tap Scan to search", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun pushSongsToConsumers() {
+        songsConsumers.toList().forEach { it.onLibraryChanged(allSongs) }
+    }
+
+    fun refreshLibraryAfterScan() {
+        lifecycleScope.launch {
+            allSongs = withContext(Dispatchers.IO) { musicRepository.getAllSongs() }
+            withContext(Dispatchers.Main) { pushSongsToConsumers() }
         }
     }
 
@@ -163,24 +214,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.main_menu, menu)
-        val searchItem = menu.findItem(R.id.action_search)
-        val searchView = searchItem?.actionView as? androidx.appcompat.widget.SearchView
-
-        searchView?.setOnQueryTextListener(object : androidx.appcompat.widget.SearchView.OnQueryTextListener {
-            override fun onQueryTextSubmit(query: String?): Boolean {
-                performSearch(query ?: "")
-                return true
-            }
-
-            override fun onQueryTextChange(newText: String?): Boolean {
-                return true
-            }
-        })
         return true
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
+            R.id.action_settings -> {
+                startActivity(Intent(this, SettingsActivity::class.java))
+                true
+            }
             R.id.action_about -> {
                 val aboutFragment = AboutFragment()
                 aboutFragment.show(supportFragmentManager, "about")
@@ -190,16 +232,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun performSearch(query: String) {
-        lifecycleScope.launch {
-            val results = musicRepository.searchSongs(query)
-            // Could update a search results fragment here
-        }
+    override fun onResume() {
+        super.onResume()
+        applyKeepScreen()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        if (companionInstance === this) companionInstance = null
         MusicService.onSongChanged = null
         MusicService.onPlaybackStateChanged = null
+    }
+
+    companion object {
+        @Volatile
+        private var companionInstance: MainActivity? = null
+
+        fun refreshKeepScreenOn() {
+            companionInstance?.applyKeepScreen()
+        }
     }
 }

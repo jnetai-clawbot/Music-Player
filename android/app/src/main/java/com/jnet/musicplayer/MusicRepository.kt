@@ -6,9 +6,65 @@ import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+data class ScanResult(
+    val added: Int,
+    val alreadyInLibrary: Int,
+    val removed: Int,
+    val total: Int
+)
+
 class MusicRepository(private val context: Context) {
 
+    private val songDao by lazy { MusicDatabase.getInstance(context).scannedSongDao() }
+    private val settingsRepo by lazy { SettingsRepository(context) }
+
+    // --- Library DB ---
+
     suspend fun getAllSongs(): List<Song> = withContext(Dispatchers.IO) {
+        songDao.getAll().map { it.toSong() }
+    }
+
+    suspend fun getLibraryCount(): Int = withContext(Dispatchers.IO) {
+        songDao.count()
+    }
+
+    // --- Scanning ---
+
+    /**
+     * Scans the device (per settings) and adds songs not already in the library DB.
+     * Also removes scanned paths that no longer exist / no longer match settings.
+     */
+    suspend fun scanForNewMusic(): ScanResult = withContext(Dispatchers.IO) {
+        val settings = settingsRepo.get()
+        val found = scanMediaStore(settings)
+
+        val existingPaths = songDao.getAllPaths().toMutableSet()
+        val foundPaths = found.map { it.path }.toSet()
+
+        val newSongs = found.filter { it.path !in existingPaths }
+        if (newSongs.isNotEmpty()) {
+            songDao.insertAll(newSongs.map { it.toScannedSong() })
+        }
+
+        // Remove entries whose files are gone OR no longer match current settings
+        val toRemove = existingPaths.filter { it !in foundPaths }
+        if (toRemove.isNotEmpty()) {
+            songDao.deleteByPaths(toRemove)
+        }
+
+        val total = songDao.count()
+        ScanResult(
+            added = newSongs.size,
+            alreadyInLibrary = foundPaths.size - newSongs.size,
+            removed = toRemove.size,
+            total = total
+        )
+    }
+
+    /** Re-syncs library with the device, marking missing files as removed without adding new ones beyond settings. */
+    suspend fun rescan(): ScanResult = scanForNewMusic()
+
+    private fun scanMediaStore(settings: AppSettings): List<Song> {
         val songs = mutableListOf<Song>()
         val resolver: ContentResolver = context.contentResolver
 
@@ -43,25 +99,49 @@ class MusicRepository(private val context: Context) {
             val trackColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
 
             while (cursor.moveToNext()) {
+                val path = cursor.getString(dataColumn) ?: continue
                 val duration = cursor.getLong(durationColumn)
-                if (duration > 5000) { // Filter out very short clips (< 5 sec)
-                    songs.add(
-                        Song(
-                            id = cursor.getLong(idColumn),
-                            title = cursor.getString(titleColumn) ?: "",
-                            artist = cursor.getString(artistColumn) ?: "",
-                            album = cursor.getString(albumColumn) ?: "",
-                            duration = duration,
-                            path = cursor.getString(dataColumn) ?: "",
-                            albumId = cursor.getLong(albumIdColumn),
-                            trackNumber = cursor.getInt(trackColumn)
-                        )
+
+                if (!matchesSettings(settings, path, duration)) continue
+
+                songs.add(
+                    Song(
+                        id = cursor.getLong(idColumn),
+                        title = cursor.getString(titleColumn) ?: "",
+                        artist = cursor.getString(artistColumn) ?: "",
+                        album = cursor.getString(albumColumn) ?: "",
+                        duration = duration,
+                        path = path,
+                        albumId = cursor.getLong(albumIdColumn),
+                        trackNumber = cursor.getInt(trackColumn)
                     )
-                }
+                )
             }
         }
-        songs
+        return songs
     }
+
+    private fun matchesSettings(settings: AppSettings, path: String, duration: Long): Boolean {
+        if (settings.mp3Only && !path.lowercase().endsWith(".mp3")) return false
+
+        if (settings.minTrackLengthSec > 0 &&
+            duration < settings.minTrackLengthSec * 1000L
+        ) return false
+
+        // Exclude beats include: anything under an excluded path is dropped first
+        if (settings.excludePaths.isNotEmpty() &&
+            settings.excludePaths.any { path.startsWith(it.trimEnd('/') + "/") || path == it.trimEnd('/') }
+        ) return false
+
+        // If include paths are defined, the file must live under one of them
+        if (settings.includePaths.isNotEmpty() &&
+            settings.includePaths.none { path.startsWith(it.trimEnd('/') + "/") || path == it.trimEnd('/') }
+        ) return false
+
+        return true
+    }
+
+    // --- Derived lists (from library DB) ---
 
     suspend fun getSongsByArtist(artist: String): List<Song> = withContext(Dispatchers.IO) {
         getAllSongs().filter { it.artist.equals(artist, ignoreCase = true) }

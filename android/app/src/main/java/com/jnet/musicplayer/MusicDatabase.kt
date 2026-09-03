@@ -7,6 +7,41 @@ import kotlinx.coroutines.withContext
 
 // --- Entities ---
 
+@Entity(tableName = "scanned_songs")
+data class ScannedSong(
+    @PrimaryKey val path: String,
+    val mediaId: Long,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val duration: Long,
+    val albumId: Long,
+    val trackNumber: Int,
+    val addedAt: Long = System.currentTimeMillis()
+) {
+    fun toSong(): Song = Song(
+        id = mediaId,
+        title = title,
+        artist = artist,
+        album = album,
+        duration = duration,
+        path = path,
+        albumId = albumId,
+        trackNumber = trackNumber
+    )
+}
+
+fun Song.toScannedSong(): ScannedSong = ScannedSong(
+    path = path,
+    mediaId = id,
+    title = title,
+    artist = artist,
+    album = album,
+    duration = duration,
+    albumId = albumId,
+    trackNumber = trackNumber
+)
+
 @Entity(tableName = "playlists")
 data class Playlist(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -68,15 +103,62 @@ interface PlaylistDao {
     suspend fun clearPlaylist(playlistId: Long)
 }
 
+// --- Scanned Songs DAO ---
+
+@Dao
+interface ScannedSongDao {
+    @Query("SELECT * FROM scanned_songs ORDER BY title COLLATE NOCASE ASC")
+    suspend fun getAll(): List<ScannedSong>
+
+    @Query("SELECT path FROM scanned_songs")
+    suspend fun getAllPaths(): List<String>
+
+    @Query("SELECT COUNT(*) FROM scanned_songs")
+    suspend fun count(): Int
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(songs: List<ScannedSong>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(songs: List<ScannedSong>)
+
+    @Query("DELETE FROM scanned_songs WHERE path IN (:paths)")
+    suspend fun deleteByPaths(paths: List<String>)
+}
+
 // --- Database ---
 
-@Database(entities = [Playlist::class, PlaylistSong::class], version = 1, exportSchema = false)
+@Database(
+    entities = [Playlist::class, PlaylistSong::class, ScannedSong::class],
+    version = 2,
+    exportSchema = false
+)
 abstract class MusicDatabase : RoomDatabase() {
     abstract fun playlistDao(): PlaylistDao
+    abstract fun scannedSongDao(): ScannedSongDao
 
     companion object {
         @Volatile
         private var INSTANCE: MusicDatabase? = null
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `scanned_songs` (
+                        `path` TEXT NOT NULL,
+                        `mediaId` INTEGER NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `artist` TEXT NOT NULL,
+                        `album` TEXT NOT NULL,
+                        `duration` INTEGER NOT NULL,
+                        `albumId` INTEGER NOT NULL,
+                        `trackNumber` INTEGER NOT NULL,
+                        `addedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`path`)
+                    )"""
+                )
+            }
+        }
 
         fun getInstance(context: Context): MusicDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -84,7 +166,7 @@ abstract class MusicDatabase : RoomDatabase() {
                     context.applicationContext,
                     MusicDatabase::class.java,
                     "jnet_music_database"
-                ).build()
+                ).addMigrations(MIGRATION_1_2).build()
                 INSTANCE = instance
                 instance
             }

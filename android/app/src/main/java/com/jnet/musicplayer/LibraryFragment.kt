@@ -15,12 +15,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class LibraryFragment : Fragment() {
+class LibraryFragment : Fragment(), MainActivity.SongsConsumer {
 
     private var _binding: FragmentLibraryBinding? = null
     private val binding get() = _binding!!
     private lateinit var adapter: SongAdapter
     private var songs: List<Song> = emptyList()
+    private var registered = false
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -46,6 +47,25 @@ class LibraryFragment : Fragment() {
         MusicService.onSongChanged = { song ->
             song?.id?.let { adapter.setCurrentPlaying(it) }
         }
+
+        registerAsConsumer()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        registerAsConsumer()
+        (activity as? MainActivity)?.allSongs?.let { onLibraryChanged(it) }
+    }
+
+    private fun registerAsConsumer() {
+        if (!registered) {
+            (activity as? MainActivity)?.registerSongsConsumer(this)
+            registered = true
+        }
+    }
+
+    override fun onLibraryChanged(newSongs: List<Song>) {
+        updateSongs(newSongs)
     }
 
     fun updateSongs(newSongs: List<Song>) {
@@ -141,6 +161,10 @@ class LibraryFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        if (registered) {
+            (activity as? MainActivity)?.unregisterSongsConsumer(this)
+            registered = false
+        }
         _binding = null
     }
 }

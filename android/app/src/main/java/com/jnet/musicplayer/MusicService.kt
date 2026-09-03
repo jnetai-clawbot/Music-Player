@@ -77,7 +77,9 @@ class MusicService : LifecycleService() {
     enum class RepeatMode { OFF, ALL, ONE }
 
     private var mediaPlayer: MediaPlayer? = null
-    private var mediaSession: MediaSessionCompat? = null
+    private var crossfadePlayer: MediaPlayer? = null
+    private var isCrossfading = false
+    private var fadeJob: Job? = null
     private var songs: List<Song> = emptyList()
     private var currentIndex: Int = 0
     private var shuffledIndices: MutableList<Int> = mutableListOf()
@@ -86,8 +88,20 @@ class MusicService : LifecycleService() {
     private var audioFocusRequest: AudioFocusRequest? = null
     private var wasPlayingBeforeFocusLoss = false
     private var progressJob: Job? = null
+    private val settings by lazy { SettingsRepository(this) }
+    private var noisyReceiverRegistered = false
 
     private val binder = MusicBinder()
+
+    private val noisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY &&
+                settings.get().pauseOnUnplug && isPlaying
+            ) {
+                togglePlayPause()
+            }
+        }
+    }
 
     inner class MusicBinder : android.os.Binder() {
         fun getService(): MusicService = this@MusicService
@@ -100,6 +114,13 @@ class MusicService : LifecycleService() {
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         createNotificationChannel()
         initMediaSession()
+        registerNoisyReceiver()
+    }
+
+    private fun registerNoisyReceiver() {
+        if (noisyReceiverRegistered) return
+        registerReceiver(noisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
+        noisyReceiverRegistered = true
     }
 
     override fun onBind(intent: Intent): IBinder {
@@ -148,11 +169,18 @@ class MusicService : LifecycleService() {
     override fun onDestroy() {
         super.onDestroy()
         progressJob?.cancel()
+        fadeJob?.cancel()
+        crossfadePlayer?.release()
+        crossfadePlayer = null
         mediaPlayer?.release()
         mediaPlayer = null
         mediaSession?.release()
         mediaSession = null
         abandonAudioFocus()
+        if (noisyReceiverRegistered) {
+            runCatching { unregisterReceiver(noisyReceiver) }
+            noisyReceiverRegistered = false
+        }
         isRunning = false
         currentSong = null
         isPlaying = false
@@ -179,6 +207,13 @@ class MusicService : LifecycleService() {
     private fun playSong(index: Int) {
         if (index < 0 || index >= songs.size) return
 
+        // Abort any in-flight crossfade
+        isCrossfading = false
+        fadeJob?.cancel()
+        fadeJob = null
+        crossfadePlayer?.release()
+        crossfadePlayer = null
+
         currentIndex = index
         val song = songs[currentIndex]
         currentSong = song
@@ -198,6 +233,7 @@ class MusicService : LifecycleService() {
                     mp.start()
                     Companion.isPlaying = true
                     Companion.duration = mp.duration
+                    applyPlaybackSpeed(mp)
                     onSongChanged?.invoke(song)
                     onPlaybackStateChanged?.invoke(true)
                     updateMediaSession()
@@ -223,11 +259,21 @@ class MusicService : LifecycleService() {
         mediaPlayer?.let { mp ->
             if (mp.isPlaying) {
                 mp.pause()
+                if (isCrossfading) {
+                    // Pause includes the crossfade partner; kill the fade
+                    fadeJob?.cancel()
+                    fadeJob = null
+                    isCrossfading = false
+                    crossfadePlayer?.release()
+                    crossfadePlayer = null
+                    mp.setVolume(1f, 1f)
+                }
                 isPlaying = false
                 onPlaybackStateChanged?.invoke(false)
                 progressJob?.cancel()
             } else {
                 mp.start()
+                applyPlaybackSpeed(mp)
                 isPlaying = true
                 onPlaybackStateChanged?.invoke(true)
                 startProgressUpdates()
@@ -239,13 +285,15 @@ class MusicService : LifecycleService() {
 
     fun playNext() {
         if (songs.isEmpty()) return
-        val nextIndex = when {
-            shuffleEnabled -> getNextShuffledIndex()
-            repeatMode == RepeatMode.ONE -> currentIndex
-            currentIndex >= songs.size - 1 -> if (repeatMode == RepeatMode.ALL) 0 else return
-            else -> currentIndex + 1
+        val toIndex = nextIndex() ?: run { stopAfterEnd(); return }
+        val speed = settings.get().playbackSpeed
+        if (settings.get().crossfadeEnabled &&
+            isPlaying && repeatMode != RepeatMode.ONE && speed > 0f
+        ) {
+            beginCrossfade(toIndex)
+        } else {
+            playSong(toIndex)
         }
-        playSong(nextIndex)
     }
 
     fun playPrevious() {
@@ -259,10 +307,123 @@ class MusicService : LifecycleService() {
         val prevIndex = when {
             shuffleEnabled -> getPrevShuffledIndex()
             repeatMode == RepeatMode.ONE -> currentIndex
-            currentIndex <= 0 -> if (repeatMode == RepeatMode.ALL) songs.size - 1 else return
+            currentIndex <= 0 -> if (repeatMode == RepeatMode.ALL || settings.get().autoRepeatEnabled) songs.size - 1 else return
             else -> currentIndex - 1
         }
-        playSong(prevIndex)
+        if (settings.get().crossfadeEnabled &&
+            isPlaying && repeatMode != RepeatMode.ONE
+        ) {
+            beginCrossfade(prevIndex)
+        } else {
+            playSong(prevIndex)
+        }
+    }
+
+    /**
+     * Resolves the next track index honoring shuffle, repeat and the
+     * auto-repeat setting. Returns null when playback should stop.
+     */
+    private fun nextIndex(): Int? {
+        if (songs.isEmpty()) return null
+        if (shuffleEnabled) return nextShuffledIndex()
+        if (repeatMode == RepeatMode.ONE) return currentIndex
+        if (currentIndex >= songs.size - 1) {
+            return if (repeatMode == RepeatMode.ALL || settings.get().autoRepeatEnabled) 0 else null
+        }
+        return currentIndex + 1
+    }
+
+    private fun stopAfterEnd() {
+        mediaPlayer?.let { mp ->
+            if (mp.isPlaying) {
+                mp.pause()
+                mp.seekTo(0)
+            }
+        }
+        isPlaying = false
+        currentPosition = 0
+        progressJob?.cancel()
+        onPlaybackStateChanged?.invoke(false)
+        updateMediaSession()
+        showNotification()
+    }
+
+    // --- Crossfade ---
+
+    private fun beginCrossfade(toIndex: Int) {
+        if (toIndex < 0 || toIndex >= songs.size) return
+        val current = mediaPlayer ?: return
+        val fadeMs = (settings.get().crossfadeDurationSec * 1000L).coerceAtLeast(100)
+        val song = songs[toIndex]
+
+        crossfadePlayer?.release()
+        crossfadePlayer = null
+        isCrossfading = true
+
+        val cp = MediaPlayer()
+        crossfadePlayer = cp
+        try {
+            cp.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .build()
+            )
+            cp.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK)
+            cp.setDataSource(this, Uri.parse(song.path))
+            cp.setOnPreparedListener { mp ->
+                if (mp != crossfadePlayer) {
+                    mp.release()
+                    return@setOnPreparedListener
+                }
+                applyPlaybackSpeed(mp)
+                mp.setVolume(0f, 0f)
+                mp.setOnCompletionListener { onSongComplete() }
+                mp.start()
+                fadeJob?.cancel()
+                fadeJob = lifecycleScope.launch {
+                    val steps = 20
+                    repeat(steps) { i ->
+                        val t = (i + 1).toFloat() / steps
+                        current.setVolume((1f - t).coerceIn(0f, 1f), (1f - t).coerceIn(0f, 1f))
+                        mp.setVolume(t.coerceIn(0f, 1f), t.coerceIn(0f, 1f))
+                        delay(fadeMs / steps)
+                    }
+                    finishCrossfade(current, mp, toIndex)
+                }
+            }
+            cp.setOnErrorListener { _, _, _ ->
+                isCrossfading = false
+                if (crossfadePlayer === cp) crossfadePlayer = null
+                cp.release()
+                playSong(toIndex)
+                true
+            }
+            cp.prepareAsync()
+        } catch (e: Exception) {
+            isCrossfading = false
+            if (crossfadePlayer === cp) crossfadePlayer = null
+            cp.release()
+            playSong(toIndex)
+        }
+    }
+
+    private fun finishCrossfade(current: MediaPlayer, mp: MediaPlayer, toIndex: Int) {
+        if (mp != crossfadePlayer) return
+        current.release()
+        mediaPlayer = mp
+        crossfadePlayer = null
+        isCrossfading = false
+        currentIndex = toIndex
+        currentSong = songs[currentIndex]
+        isPlaying = true
+        duration = mp.duration
+        currentPosition = mp.currentPosition
+        onSongChanged?.invoke(currentSong)
+        onPlaybackStateChanged?.invoke(true)
+        updateMediaSession()
+        showNotification()
+        startProgressUpdates()
     }
 
     // --- Shuffle Helpers ---
@@ -273,13 +434,17 @@ class MusicService : LifecycleService() {
         shufflePointer = 0
     }
 
-    private fun getNextShuffledIndex(): Int {
+    private fun nextShuffledIndex(): Int? {
         if (shuffledIndices.isEmpty()) buildShuffleList()
-        shufflePointer = (shufflePointer + 1).coerceAtMost(shuffledIndices.size - 1)
-        if (shufflePointer >= shuffledIndices.size - 1 && repeatMode == RepeatMode.ALL) {
-            buildShuffleList()
-            shufflePointer = 0
+        if (shufflePointer >= shuffledIndices.size - 1) {
+            if (repeatMode == RepeatMode.ALL || settings.get().autoRepeatEnabled) {
+                buildShuffleList()
+                shufflePointer = 0
+                return shuffledIndices.getOrElse(0) { 0 }
+            }
+            return null
         }
+        shufflePointer += 1
         return shuffledIndices.getOrElse(shufflePointer) { 0 }
     }
 
@@ -291,6 +456,7 @@ class MusicService : LifecycleService() {
     // --- Song Complete ---
 
     private fun onSongComplete() {
+        if (isCrossfading) return
         when (repeatMode) {
             RepeatMode.ONE -> playSong(currentIndex)
             else -> playNext()
@@ -309,6 +475,22 @@ class MusicService : LifecycleService() {
                     onPositionChanged?.invoke(currentPosition, duration)
                 }
                 delay(200)
+            }
+        }
+    }
+
+    // --- Playback Speed ---
+
+    private fun applyPlaybackSpeed(mp: MediaPlayer) {
+        val speed = settings.get().playbackSpeed
+        if (speed <= 0f) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                val params = mp.playbackParams
+                params.setSpeed(speed)
+                mp.playbackParams = params
+            } catch (_: Exception) {
+                // Some devices reject params while preparing; ignore
             }
         }
     }
@@ -340,18 +522,22 @@ class MusicService : LifecycleService() {
                 mediaPlayer?.pause()
                 isPlaying = false
                 onPlaybackStateChanged?.invoke(false)
+                progressJob?.cancel()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                 wasPlayingBeforeFocusLoss = mediaPlayer?.isPlaying ?: false
                 mediaPlayer?.pause()
                 isPlaying = false
                 onPlaybackStateChanged?.invoke(false)
+                progressJob?.cancel()
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
                 if (wasPlayingBeforeFocusLoss) {
                     mediaPlayer?.start()
+                    mediaPlayer?.let { applyPlaybackSpeed(it) }
                     isPlaying = true
                     onPlaybackStateChanged?.invoke(true)
+                    startProgressUpdates()
                 }
             }
         }

@@ -12,12 +12,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class AlbumListFragment : Fragment() {
+class AlbumListFragment : Fragment(), MainActivity.SongsConsumer {
 
     private var _binding: FragmentAlbumListBinding? = null
     private val binding get() = _binding!!
     private lateinit var adapter: AlbumAdapter
     private var songs: List<Song> = emptyList()
+    private var registered = false
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -33,6 +34,25 @@ class AlbumListFragment : Fragment() {
         }
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
+        registerAsConsumer()
+        (activity as? MainActivity)?.allSongs?.let { onLibraryChanged(it) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        registerAsConsumer()
+        (activity as? MainActivity)?.allSongs?.let { onLibraryChanged(it) }
+    }
+
+    private fun registerAsConsumer() {
+        if (!registered) {
+            (activity as? MainActivity)?.registerSongsConsumer(this)
+            registered = true
+        }
+    }
+
+    override fun onLibraryChanged(newSongs: List<Song>) {
+        updateSongs(newSongs)
     }
 
     fun updateSongs(newSongs: List<Song>) {
@@ -59,6 +79,10 @@ class AlbumListFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        if (registered) {
+            (activity as? MainActivity)?.unregisterSongsConsumer(this)
+            registered = false
+        }
         _binding = null
     }
 }
