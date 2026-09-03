@@ -221,8 +221,29 @@ class MainActivity : AppCompatActivity() {
                 if (allSongs.isEmpty()) {
                     Toast.makeText(this@MainActivity, "No music found - tap Scan to search", Toast.LENGTH_LONG).show()
                 }
+                promptBatteryOptimization()
             }
         }
+    }
+
+    private var batteryPromptShown = false
+
+    private fun promptBatteryOptimization() {
+        if (batteryPromptShown) return
+        if (BatteryOptimization.isIgnoringBatteryOptimizations(this)) return
+        batteryPromptShown = true
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Keep playing in the background?")
+            .setMessage(
+                "To stop Samsung/Pixel battery settings from pausing your music, " +
+                "allow this app to run in the background without battery limits."
+            )
+            .setPositiveButton("Allow") { _, _ ->
+                BatteryOptimization.requestIgnoreBatteryOptimizations(this)
+            }
+            .setNegativeButton("Not now", null)
+            .show()
     }
 
     private fun pushSongsToConsumers() {

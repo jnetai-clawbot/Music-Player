@@ -3,6 +3,7 @@ package com.jnet.musicplayer
 import android.os.Bundle
 import android.text.Editable
 import android.widget.EditText
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -37,6 +38,18 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
         )
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refresh()
+    }
+
+    private fun refresh() {
+        val filter = binding.searchInput.text?.toString().orEmpty()
+        adapter = SettingsAdapter(buildRows())
+        binding.settingsList.adapter = adapter
+        adapter.setFilter(filter)
     }
 
     private fun buildRows(): List<SettingsRow> {
@@ -126,6 +139,25 @@ class SettingsActivity : AppCompatActivity() {
             }
         )
 
+        val ignoringBattery = BatteryOptimization.isIgnoringBatteryOptimizations(this)
+        rows.add(
+            SettingsRow.Value(
+                id = "background_playback",
+                title = "Keep playing in the background",
+                value = if (ignoringBattery) "Allowed" else "Not allowed - tap to allow"
+            ) {
+                if (BatteryOptimization.requestIgnoreBatteryOptimizations(this)) {
+                    Toast.makeText(
+                        this,
+                        "Choose \"Allow\" on the next screen to let music keep playing",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    Toast.makeText(this, "Open battery settings to allow playback", Toast.LENGTH_LONG).show()
+                }
+            }
+        )
+
         rows.add(SettingsRow.Header("Library Scanning"))
 
         rows.add(
@@ -204,13 +236,6 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         return rows
-    }
-
-    private fun refresh() {
-        adapter = SettingsAdapter(buildRows())
-        binding.settingsList.adapter = adapter
-        val q = binding.searchInput.text?.toString().orEmpty()
-        adapter.setFilter(q)
     }
 
     private fun formatMinLength(sec: Int): String = when {
