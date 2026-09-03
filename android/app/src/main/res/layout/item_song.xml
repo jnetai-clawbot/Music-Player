@@ -19,12 +19,29 @@
         android:gravity="center_vertical"
         android:padding="12dp">
 
-        <ImageView
-            android:id="@+id/ivAlbumArt"
+        <FrameLayout
             android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:scaleType="centerCrop"
-            android:src="@drawable/ic_music_note" />
+            android:layout_height="48dp">
+
+            <ImageView
+                android:id="@+id/ivAlbumArt"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:scaleType="centerCrop"
+                android:src="@drawable/ic_music_note" />
+
+            <ImageButton
+                android:id="@+id/btnPlay"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:backgroundTint="#80000000"
+                android:src="@drawable/ic_play"
+                android:contentDescription="Play"
+                android:scaleType="center"
+                android:padding="13dp" />
+
+        </FrameLayout>
 
         <LinearLayout
             android:layout_width="0dp"
@@ -58,7 +75,16 @@
             android:layout_height="wrap_content"
             android:textColor="@color/md_theme_onSurfaceVariant"
             android:textSize="12sp"
-            android:paddingStart="8dp" />
+            android:paddingEnd="8dp" />
+
+        <ImageButton
+            android:id="@+id/btnAdd"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_add"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Add to playlist"
+            android:tint="@color/md_theme_onSurfaceVariant" />
 
     </LinearLayout>
 

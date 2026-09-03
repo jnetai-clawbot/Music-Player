@@ -4,16 +4,10 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.textfield.TextInputEditText
 import com.jnet.musicplayer.databinding.FragmentLibraryBinding
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class LibraryFragment : Fragment(), MainActivity.SongsConsumer {
 
@@ -39,17 +33,26 @@ class LibraryFragment : Fragment(), MainActivity.SongsConsumer {
             },
             onSongLongClick = { song ->
                 showSongOptionsDialog(song)
+            },
+            onAddToPlaylist = { song, _ ->
+                val mainActivity = activity as? MainActivity ?: return@SongAdapter
+                PlaylistDialogs.showAddToPlaylist(
+                    requireContext(), this, mainActivity.playlistRepository, song
+                )
             }
         )
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
 
-        MusicService.onSongChanged = { song ->
+        songChangedListener = { song ->
             song?.id?.let { adapter.setCurrentPlaying(it) }
         }
+        MusicService.addOnSongChanged(songChangedListener)
 
         registerAsConsumer()
     }
+
+    private var songChangedListener: ((Song?) -> Unit)? = null
 
     override fun onResume() {
         super.onResume()
@@ -78,71 +81,20 @@ class LibraryFragment : Fragment(), MainActivity.SongsConsumer {
         val mainActivity = activity as? MainActivity ?: return
         val playlistRepo = mainActivity.playlistRepository
 
-        lifecycleScope.launch {
-            val playlists = withContext(Dispatchers.IO) { playlistRepo.getAllPlaylists() }
-
-            val options = mutableListOf<String>().apply {
-                add("Add to Playlist")
-                add("Song Details")
-            }
-
-            MaterialAlertDialogBuilder(requireContext())
-                .setTitle(song.displayTitle)
-                .setItems(options.toTypedArray()) { _, which ->
-                    when (which) {
-                        0 -> showAddToPlaylistDialog(song, playlists, playlistRepo)
-                        1 -> showSongDetails(song)
-                    }
-                }
-                .show()
+        val repo = playlistRepo
+        val options = mutableListOf<String>().apply {
+            add("Add to Playlist")
+            add("Song Details")
         }
-    }
-
-    private fun showAddToPlaylistDialog(
-        song: Song, playlists: List<Playlist>, playlistRepo: PlaylistRepository
-    ) {
-        val names = playlists.map { it.name }.toMutableList()
-        names.add(0, "+ Create New Playlist")
 
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Add to Playlist")
-            .setItems(names.toTypedArray()) { _, which ->
-                if (which == 0) {
-                    showCreatePlaylistDialog(song, playlistRepo)
-                } else {
-                    val playlist = playlists[which - 1]
-                    lifecycleScope.launch {
-                        withContext(Dispatchers.IO) {
-                            val existing = playlistRepo.getPlaylistSongs(playlist.id)
-                            playlistRepo.addSongToPlaylist(
-                                playlist.id, song.id, existing.size
-                            )
-                        }
-                        Toast.makeText(requireContext(), "Added to ${playlist.name}", Toast.LENGTH_SHORT).show()
-                    }
+            .setTitle(song.displayTitle)
+            .setItems(options.toTypedArray()) { _, which ->
+                when (which) {
+                    0 -> PlaylistDialogs.showAddToPlaylist(requireContext(), this, repo, song)
+                    1 -> showSongDetails(song)
                 }
             }
-            .show()
-    }
-
-    private fun showCreatePlaylistDialog(song: Song, playlistRepo: PlaylistRepository) {
-        val input = TextInputEditText(requireContext()).apply {
-            hint = "Playlist name"
-        }
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle("New Playlist")
-            .setView(input)
-            .setPositiveButton("Create") { _, _ ->
-                val name = input.text.toString().trim()
-                if (name.isNotEmpty()) {
-                    lifecycleScope.launch {
-                        val id = withContext(Dispatchers.IO) { playlistRepo.createPlaylist(name) }
-                        withContext(Dispatchers.IO) { playlistRepo.addSongToPlaylist(id, song.id, 0) }
-                        Toast.makeText(requireContext(), "Playlist \"$name\" created", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-            .setNegativeButton("Cancel", null)
             .show()
     }
 
@@ -165,6 +117,8 @@ class LibraryFragment : Fragment(), MainActivity.SongsConsumer {
             (activity as? MainActivity)?.unregisterSongsConsumer(this)
             registered = false
         }
+        songChangedListener?.let { MusicService.removeOnSongChanged(it) }
+        songChangedListener = null
         _binding = null
     }
 }

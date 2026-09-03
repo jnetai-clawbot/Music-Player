@@ -12,7 +12,8 @@ typealias SongClickHandler = (Song, Int) -> Unit
 class SongAdapter(
     private var songs: List<Song> = emptyList(),
     private val onSongClick: SongClickHandler,
-    private val onSongLongClick: ((Song) -> Unit)? = null
+    private val onSongLongClick: ((Song) -> Unit)? = null,
+    private val onAddToPlaylist: ((Song, Int) -> Unit)? = null
 ) : RecyclerView.Adapter<SongAdapter.SongViewHolder>() {
 
     private var currentPlayingId: Long = -1
@@ -33,19 +34,31 @@ class SongAdapter(
             tvArtist.text = song.displayArtist
             tvDuration.text = song.displayDuration
 
-            if (song.id == currentPlayingId) {
+            val isCurrent = song.id == currentPlayingId
+            if (isCurrent) {
                 tvTitle.setTextColor(root.context.getColor(R.color.md_theme_primary))
+                btnPlay.setImageResource(
+                    if (MusicService.isPlaying) R.drawable.ic_pause else R.drawable.ic_play
+                )
             } else {
                 tvTitle.setTextColor(root.context.getColor(R.color.md_theme_onSurface))
+                btnPlay.setImageResource(R.drawable.ic_play)
             }
 
             loadAlbumArt(ivAlbumArt, song.albumId)
 
+            // Row tap plays the song
             root.setOnClickListener { onSongClick(song, position) }
             root.setOnLongClickListener {
                 onSongLongClick?.invoke(song)
                 true
             }
+
+            // Explicit play/pause button
+            btnPlay.setOnClickListener { onSongClick(song, position) }
+
+            // Add to playlist button
+            btnAdd.setOnClickListener { onAddToPlaylist?.invoke(song, position) }
         }
     }
 
@@ -57,14 +70,8 @@ class SongAdapter(
     }
 
     fun setCurrentPlaying(songId: Long) {
-        val oldId = currentPlayingId
         currentPlayingId = songId
-        if (oldId != songId) {
-            val oldIndex = songs.indexOfFirst { it.id == oldId }
-            val newIndex = songs.indexOfFirst { it.id == songId }
-            if (oldIndex >= 0) notifyItemChanged(oldIndex)
-            if (newIndex >= 0) notifyItemChanged(newIndex)
-        }
+        notifyDataSetChanged()
     }
 
     companion object {

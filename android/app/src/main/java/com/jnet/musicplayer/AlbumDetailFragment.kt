@@ -35,6 +35,12 @@ class AlbumDetailFragment : Fragment() {
             onSongClick = { song, index ->
                 val mainActivity = activity as? MainActivity ?: return@SongAdapter
                 mainActivity.playSong(songs, index)
+            },
+            onAddToPlaylist = { song, _ ->
+                val mainActivity = activity as? MainActivity ?: return@SongAdapter
+                PlaylistDialogs.showAddToPlaylist(
+                    requireContext(), this, mainActivity.playlistRepository, song
+                )
             }
         )
         adapter.updateSongs(songs)

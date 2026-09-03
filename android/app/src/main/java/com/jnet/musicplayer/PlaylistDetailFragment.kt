@@ -46,6 +46,12 @@ class PlaylistDetailFragment : Fragment() {
             },
             onSongLongClick = { song ->
                 showRemoveFromPlaylistDialog(song)
+            },
+            onAddToPlaylist = { song, _ ->
+                val mainActivity = activity as? MainActivity ?: return@SongAdapter
+                PlaylistDialogs.showAddToPlaylist(
+                    requireContext(), this, mainActivity.playlistRepository, song
+                )
             }
         )
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())

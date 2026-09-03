@@ -91,6 +91,16 @@
 
     </LinearLayout>
 
+    <!-- Add to playlist -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnAddToPlaylist"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="Add to Playlist"
+        android:textColor="@color/md_theme_primary" />
+
     <!-- Controls -->
     <LinearLayout
         android:layout_width="match_parent"

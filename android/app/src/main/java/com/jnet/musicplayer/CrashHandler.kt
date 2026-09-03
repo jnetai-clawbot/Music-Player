@@ -2,7 +2,6 @@ package com.jnet.musicplayer
 
 import android.app.Application
 import android.content.Context
-import android.content.Intent
 import android.os.Build
 import android.os.Process
 import android.util.Log
@@ -13,8 +12,9 @@ import java.util.Locale
 
 /**
  * Global crash reporter. Captures any uncaught exception, writes a report file
- * to internal storage, and launches [CrashActivity] so the user can copy the
- * error to the clipboard.
+ * to internal storage, then lets the system terminate the process normally
+ * (avoids the "app isn't responding" hang). The report is shown with a
+ * copy-to-clipboard button on the next app launch via [MainActivity].
  */
 object CrashHandler {
 
@@ -22,9 +22,11 @@ object CrashHandler {
     private const val CRASH_FILE = "crash_report.txt"
 
     private var appContext: Context? = null
+    private var previousHandler: Thread.UncaughtExceptionHandler? = null
 
     fun install(app: Application) {
         appContext = app.applicationContext
+        previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             handleCrash(thread, throwable)
         }
@@ -34,23 +36,17 @@ object CrashHandler {
         try {
             val report = buildReport(thread, throwable)
             saveReport(report)
-
-            val ctx = appContext ?: return
-            val intent = Intent(ctx, CrashActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                putExtra(CrashActivity.EXTRA_REPORT, report)
-            }
-            // Launch the crash screen. The process stays alive (we never call the
-            // original default handler), so the crash screen renders even though
-            // some other thread threw. The user closes it explicitly.
-            ctx.startActivity(intent)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to show crash screen", e)
-            Process.killProcess(Process.myPid())
-            System.exit(2)
+            Log.e(TAG, "Failed to write crash report", e)
         }
+        // Propagate to the system handler so the OS logs and kills the process
+        // cleanly. This prevents the main thread dying silently and leaving the
+        // app in an unresponsive ("isn't responding") state.
+        previousHandler?.uncaughtException(thread, throwable)
+            ?: run {
+                Process.killProcess(Process.myPid())
+                System.exit(2)
+            }
     }
 
     private fun buildReport(thread: Thread, throwable: Throwable): String {

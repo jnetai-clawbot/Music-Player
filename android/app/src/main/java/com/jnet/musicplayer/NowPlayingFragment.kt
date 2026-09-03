@@ -43,6 +43,13 @@ class NowPlayingFragment : Fragment() {
             MusicService.toggleRepeat()
             updateRepeatButton()
         }
+        binding.btnAddToPlaylist.setOnClickListener {
+            val song = MusicService.currentSong ?: return@setOnClickListener
+            val mainActivity = activity as? MainActivity ?: return@setOnClickListener
+            PlaylistDialogs.showAddToPlaylist(
+                requireContext(), this, mainActivity.playlistRepository, song
+            )
+        }
 
         binding.seekBar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
@@ -56,14 +63,26 @@ class NowPlayingFragment : Fragment() {
     }
 
     private fun observeServiceState() {
-        MusicService.onSongChanged = { updateUI() }
-        MusicService.onPlaybackStateChanged = { updatePlayPauseButton(it) }
-        MusicService.onPositionChanged = { position, duration -> updateSeekbar(position, duration) }
-        MusicService.onShuffleChanged = { updateShuffleButton() }
-        MusicService.onRepeatChanged = { updateRepeatButton() }
+        songListener = { updateUI() }
+        playbackListener = { updatePlayPauseButton(it) }
+        positionListener = { position, duration -> updateSeekbar(position, duration) }
+        shuffleListener = { updateShuffleButton() }
+        repeatListener = { updateRepeatButton() }
+        MusicService.addOnSongChanged(songListener)
+        MusicService.addOnPlaybackStateChanged(playbackListener)
+        MusicService.addOnPositionChanged(positionListener)
+        MusicService.addOnShuffleChanged(shuffleListener)
+        MusicService.addOnRepeatChanged(repeatListener)
     }
 
+    private var songListener: ((Song?) -> Unit)? = null
+    private var playbackListener: ((Boolean) -> Unit)? = null
+    private var positionListener: ((Int, Int) -> Unit)? = null
+    private var shuffleListener: ((Boolean) -> Unit)? = null
+    private var repeatListener: ((RepeatMode) -> Unit)? = null
+
     private fun updateUI() {
+        if (_binding == null) return
         val song = MusicService.currentSong ?: return
 
         binding.tvTitle.text = song.displayTitle
@@ -121,7 +140,11 @@ class NowPlayingFragment : Fragment() {
         val intent = Intent(requireContext(), MusicService::class.java).apply {
             this.action = action
         }
-        requireContext().startService(intent)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            requireContext().startForegroundService(intent)
+        } else {
+            requireContext().startService(intent)
+        }
     }
 
     private fun formatTime(ms: Int): String {
@@ -133,6 +156,16 @@ class NowPlayingFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        songListener?.let { MusicService.removeOnSongChanged(it) }
+        playbackListener?.let { MusicService.removeOnPlaybackStateChanged(it) }
+        positionListener?.let { MusicService.removeOnPositionChanged(it) }
+        shuffleListener?.let { MusicService.removeOnShuffleChanged(it) }
+        repeatListener?.let { MusicService.removeOnRepeatChanged(it) }
+        songListener = null
+        playbackListener = null
+        positionListener = null
+        shuffleListener = null
+        repeatListener = null
         _binding = null
     }
 }

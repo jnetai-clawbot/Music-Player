@@ -119,12 +119,17 @@ class MainActivity : AppCompatActivity() {
             sendServiceAction(MusicService.ACTION_NEXT)
         }
 
-        MusicService.onSongChanged = { updateMiniPlayer() }
-        MusicService.onPlaybackStateChanged = {
+        songChangedListener = { updateMiniPlayer() }
+        playbackStateListener = {
             updateMiniPlayerPlayButton()
             applyKeepScreen()
         }
+        MusicService.addOnSongChanged(songChangedListener)
+        MusicService.addOnPlaybackStateChanged(playbackStateListener)
     }
+
+    private var songChangedListener: ((Song?) -> Unit)? = null
+    private var playbackStateListener: ((Boolean) -> Unit)? = null
 
     private fun applyKeepScreen() {
         val keep = settingsRepository.get().keepScreenOn && MusicService.isPlaying
@@ -269,8 +274,8 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         if (companionInstance === this) companionInstance = null
-        MusicService.onSongChanged = null
-        MusicService.onPlaybackStateChanged = null
+        songChangedListener?.let { MusicService.removeOnSongChanged(it) }
+        playbackStateListener?.let { MusicService.removeOnPlaybackStateChanged(it) }
     }
 
     companion object {

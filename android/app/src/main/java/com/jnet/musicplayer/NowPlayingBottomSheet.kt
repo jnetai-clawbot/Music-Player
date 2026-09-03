@@ -25,6 +25,7 @@ class NowPlayingBottomSheet : BottomSheetDialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         setupControls()
+        registerListeners()
         updateUI()
     }
 
@@ -34,6 +35,13 @@ class NowPlayingBottomSheet : BottomSheetDialogFragment() {
         binding.btnPrevious.setOnClickListener { sendAction(MusicService.ACTION_PREVIOUS) }
         binding.btnShuffle.setOnClickListener { MusicService.toggleShuffle(); updateShuffleButton() }
         binding.btnRepeat.setOnClickListener { MusicService.toggleRepeat(); updateRepeatButton() }
+        binding.btnAddToPlaylist.setOnClickListener {
+            val song = MusicService.currentSong ?: return@setOnClickListener
+            val mainActivity = activity as? MainActivity ?: return@setOnClickListener
+            PlaylistDialogs.showAddToPlaylist(
+                requireContext(), this, mainActivity.playlistRepository, song
+            )
+        }
 
         binding.seekBar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
@@ -46,6 +54,7 @@ class NowPlayingBottomSheet : BottomSheetDialogFragment() {
 
     private fun updateUI() {
         val song = MusicService.currentSong ?: return
+        if (_binding == null) return
         binding.tvTitle.text = song.displayTitle
         binding.tvArtist.text = song.displayArtist
         binding.tvAlbum.text = song.album
@@ -57,11 +66,24 @@ class NowPlayingBottomSheet : BottomSheetDialogFragment() {
         updatePlayPauseButton(MusicService.isPlaying)
         updateShuffleButton()
         updateRepeatButton()
-
-        MusicService.onPlaybackStateChanged = { updatePlayPauseButton(it) }
-        MusicService.onPositionChanged = { pos, dur -> updateSeekbar(pos, dur) }
-        MusicService.onSongChanged = { updateUI() }
     }
+
+    private var listenersRegistered = false
+
+    private fun registerListeners() {
+        if (listenersRegistered) return
+        listenersRegistered = true
+        playbackStateListener = { updatePlayPauseButton(it) }
+        positionListener = { pos, dur -> updateSeekbar(pos, dur) }
+        songListener = { updateUI() }
+        MusicService.addOnPlaybackStateChanged(playbackStateListener)
+        MusicService.addOnPositionChanged(positionListener)
+        MusicService.addOnSongChanged(songListener)
+    }
+
+    private var playbackStateListener: ((Boolean) -> Unit)? = null
+    private var positionListener: ((Int, Int) -> Unit)? = null
+    private var songListener: ((Song?) -> Unit)? = null
 
     private fun updatePlayPauseButton(isPlaying: Boolean) {
         binding.btnPlayPause.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
@@ -107,6 +129,15 @@ class NowPlayingBottomSheet : BottomSheetDialogFragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        if (listenersRegistered) {
+            playbackStateListener?.let { MusicService.removeOnPlaybackStateChanged(it) }
+            positionListener?.let { MusicService.removeOnPositionChanged(it) }
+            songListener?.let { MusicService.removeOnSongChanged(it) }
+        }
+        listenersRegistered = false
+        playbackStateListener = null
+        positionListener = null
+        songListener = null
         _binding = null
     }
 }

@@ -1,3 +1,12 @@
+v1.1.2 - Fix hangs/crashes, add play & add-to-playlist buttons
+- Fixed "app isn't responding" hang: crash handler now terminates the process cleanly instead of swallowing errors on a dead thread
+- Crash reports saved & shown next launch with a Copy-to-clipboard button
+- Each song row now has a Play/Pause button and Add (+) button to add the track to a playlist
+- Now-playing screen has an "Add to Playlist" button while a track is playing
+- Converted service callbacks to multi-listener so screens never unregister/clobber one another (fixed crash after closing now-playing sheet)
+- Extra guards: blank/expired song paths skip instead of crashing
+- Fixed foreground-service start + audio focus edge cases on Samsung & Pixel devices
+
 v1.1.1 - Stability & crash reporting fixes
 - Fixed crash when tapping a song to play (song queue now passed in-process instead of via Intent parcel, avoiding TransactionTooLargeException on large libraries)
 - Added global crash reporter: any crash now shows a screen with the error, device info and a "Copy Error" (clipboard) + Share button

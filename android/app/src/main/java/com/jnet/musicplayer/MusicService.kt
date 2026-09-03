@@ -58,16 +58,77 @@ class MusicService : LifecycleService() {
         var shuffleEnabled = false
         var repeatMode: RepeatMode = RepeatMode.OFF
 
-        var onSongChanged: ((Song?) -> Unit)? = null
-        var onPlaybackStateChanged: ((Boolean) -> Unit)? = null
-        var onPositionChanged: ((Int, Int) -> Unit)? = null
-        var onShuffleChanged: ((Boolean) -> Unit)? = null
-        var onRepeatChanged: ((RepeatMode) -> Unit)? = null
+        // Multi-listener events so UI components never clobber one another
+        private val songChangedListeners: MutableList<(Song?) -> Unit> = mutableListOf()
+        private val playbackStateListeners: MutableList<(Boolean) -> Unit> = mutableListOf()
+        private val positionListeners: MutableList<(Int, Int) -> Unit> = mutableListOf()
+        private val shuffleListeners: MutableList<(Boolean) -> Unit> = mutableListOf()
+        private val repeatListeners: MutableList<(RepeatMode) -> Unit> = mutableListOf()
+
+        fun addOnSongChanged(listener: (Song?) -> Unit) {
+            songChangedListeners.add(listener)
+        }
+
+        fun removeOnSongChanged(listener: (Song?) -> Unit) {
+            songChangedListeners.remove(listener)
+        }
+
+        fun addOnPlaybackStateChanged(listener: (Boolean) -> Unit) {
+            playbackStateListeners.add(listener)
+        }
+
+        fun removeOnPlaybackStateChanged(listener: (Boolean) -> Unit) {
+            playbackStateListeners.remove(listener)
+        }
+
+        fun addOnPositionChanged(listener: (Int, Int) -> Unit) {
+            positionListeners.add(listener)
+        }
+
+        fun removeOnPositionChanged(listener: (Int, Int) -> Unit) {
+            positionListeners.remove(listener)
+        }
+
+        fun addOnShuffleChanged(listener: (Boolean) -> Unit) {
+            shuffleListeners.add(listener)
+        }
+
+        fun removeOnShuffleChanged(listener: (Boolean) -> Unit) {
+            shuffleListeners.remove(listener)
+        }
+
+        fun addOnRepeatChanged(listener: (RepeatMode) -> Unit) {
+            repeatListeners.add(listener)
+        }
+
+        fun removeOnRepeatChanged(listener: (RepeatMode) -> Unit) {
+            repeatListeners.remove(listener)
+        }
+
+        internal fun notifySongChanged(song: Song?) {
+            songChangedListeners.toList().forEach { it(song) }
+        }
+
+        internal fun notifyPlaybackStateChanged(playing: Boolean) {
+            playbackStateListeners.toList().forEach { it(playing) }
+        }
+
+        internal fun notifyPositionChanged(position: Int, duration: Int) {
+            positionListeners.toList().forEach { it(position, duration) }
+        }
+
+        internal fun notifyShuffleChanged(enabled: Boolean) {
+            shuffleListeners.toList().forEach { it(enabled) }
+        }
+
+        internal fun notifyRepeatChanged(mode: RepeatMode) {
+            repeatListeners.toList().forEach { it(mode) }
+        }
 
         // Direct control methods (called via intent or from UI)
         fun toggleShuffle() {
             shuffleEnabled = !shuffleEnabled
-            onShuffleChanged?.invoke(shuffleEnabled)
+            notifyShuffleChanged(shuffleEnabled)
         }
 
         fun toggleRepeat() {
@@ -76,7 +137,7 @@ class MusicService : LifecycleService() {
                 RepeatMode.ALL -> RepeatMode.ONE
                 RepeatMode.ONE -> RepeatMode.OFF
             }
-            onRepeatChanged?.invoke(repeatMode)
+            notifyRepeatChanged(repeatMode)
         }
 
         fun seekTo(position: Int) {
@@ -254,11 +315,11 @@ class MusicService : LifecycleService() {
         currentSong = null
         isPlaying = false
         _instance = null
-        onSongChanged = null
-        onPlaybackStateChanged = null
-        onPositionChanged = null
-        onShuffleChanged = null
-        onRepeatChanged = null
+        songChangedListeners.clear()
+        playbackStateListeners.clear()
+        positionListeners.clear()
+        shuffleListeners.clear()
+        repeatListeners.clear()
     }
 
     // --- Notification Receiver ---
@@ -295,6 +356,12 @@ class MusicService : LifecycleService() {
         val song = songs[currentIndex]
         currentSong = song
 
+        if (song.path.isBlank()) {
+            // Guard against blank/expired MediaStore paths
+            playNext()
+            return
+        }
+
         try {
             mediaPlayer?.release()
             mediaPlayer = MediaPlayer().apply {
@@ -312,15 +379,15 @@ class MusicService : LifecycleService() {
                         Companion.isPlaying = true
                         Companion.duration = mp.duration
                         applyPlaybackSpeed(mp)
-                        onSongChanged?.invoke(song)
-                        onPlaybackStateChanged?.invoke(true)
+                        notifySongChanged(song)
+                        notifyPlaybackStateChanged(true)
                         updateMediaSession()
                         startProgressUpdates()
                         requestAudioFocus()
                         showNotification()
                     } catch (e: Exception) {
                         // Keep the service alive even if one track misbehaves
-                        onPlaybackStateChanged?.invoke(false)
+                        notifyPlaybackStateChanged(false)
                     }
                 }
                 setOnCompletionListener {
@@ -352,13 +419,13 @@ class MusicService : LifecycleService() {
                     mp.setVolume(1f, 1f)
                 }
                 isPlaying = false
-                onPlaybackStateChanged?.invoke(false)
+                notifyPlaybackStateChanged(false)
                 progressJob?.cancel()
             } else {
                 mp.start()
                 applyPlaybackSpeed(mp)
                 isPlaying = true
-                onPlaybackStateChanged?.invoke(true)
+                notifyPlaybackStateChanged(true)
                 startProgressUpdates()
             }
             updateMediaSession()
@@ -426,7 +493,7 @@ class MusicService : LifecycleService() {
         isPlaying = false
         currentPosition = 0
         progressJob?.cancel()
-        onPlaybackStateChanged?.invoke(false)
+        notifyPlaybackStateChanged(false)
         updateMediaSession()
         showNotification()
     }
@@ -502,8 +569,8 @@ class MusicService : LifecycleService() {
         isPlaying = true
         duration = mp.duration
         currentPosition = mp.currentPosition
-        onSongChanged?.invoke(currentSong)
-        onPlaybackStateChanged?.invoke(true)
+        notifySongChanged(currentSong)
+        notifyPlaybackStateChanged(true)
         updateMediaSession()
         showNotification()
         startProgressUpdates()
@@ -555,7 +622,7 @@ class MusicService : LifecycleService() {
                 mediaPlayer?.let { mp ->
                     currentPosition = mp.currentPosition
                     duration = mp.duration
-                    onPositionChanged?.invoke(currentPosition, duration)
+                    notifyPositionChanged(currentPosition, duration)
                 }
                 delay(200)
             }
@@ -612,14 +679,14 @@ class MusicService : LifecycleService() {
                 wasPlayingBeforeFocusLoss = mediaPlayer?.isPlaying ?: false
                 mediaPlayer?.pause()
                 isPlaying = false
-                onPlaybackStateChanged?.invoke(false)
+                notifyPlaybackStateChanged(false)
                 progressJob?.cancel()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                 wasPlayingBeforeFocusLoss = mediaPlayer?.isPlaying ?: false
                 mediaPlayer?.pause()
                 isPlaying = false
-                onPlaybackStateChanged?.invoke(false)
+                notifyPlaybackStateChanged(false)
                 progressJob?.cancel()
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
@@ -627,7 +694,7 @@ class MusicService : LifecycleService() {
                     mediaPlayer?.start()
                     mediaPlayer?.let { applyPlaybackSpeed(it) }
                     isPlaying = true
-                    onPlaybackStateChanged?.invoke(true)
+                    notifyPlaybackStateChanged(true)
                     startProgressUpdates()
                 }
             }

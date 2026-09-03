@@ -34,12 +34,6 @@
             android:exported="false"
             android:parentActivityName=".MainActivity" />
 
-        <activity
-            android:name=".CrashActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:launchMode="singleTop" />
-
         <service
             android:name=".MusicService"
             android:exported="false"
