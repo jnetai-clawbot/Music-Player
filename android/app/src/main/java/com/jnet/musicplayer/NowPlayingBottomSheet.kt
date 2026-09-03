@@ -93,7 +93,11 @@ class NowPlayingBottomSheet : BottomSheetDialogFragment() {
         val intent = Intent(requireContext(), MusicService::class.java).apply {
             this.action = action
         }
-        requireContext().startService(intent)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            requireContext().startForegroundService(intent)
+        } else {
+            requireContext().startService(intent)
+        }
     }
 
     private fun formatTime(ms: Int): String {

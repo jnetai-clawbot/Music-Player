@@ -18,7 +18,6 @@ import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.*
-import java.io.IOException
 
 class MusicService : LifecycleService() {
 
@@ -29,9 +28,24 @@ class MusicService : LifecycleService() {
         const val ACTION_NEXT = "com.jnet.musicplayer.ACTION_NEXT"
         const val ACTION_PREVIOUS = "com.jnet.musicplayer.ACTION_PREVIOUS"
         const val ACTION_STOP = "com.jnet.musicplayer.ACTION_STOP"
+        const val ACTION_PLAY_QUEUE = "com.jnet.musicplayer.ACTION_PLAY_QUEUE"
         const val EXTRA_SONG_LIST = "song_list"
         const val EXTRA_SONG_INDEX = "song_index"
         const val EXTRA_SHUFFLE = "shuffle"
+
+        @Volatile
+        private var pendingQueue: List<Song>? = null
+
+        /** Queue is passed in-process to avoid binder transaction size limits. */
+        fun setQueue(songs: List<Song>) {
+            pendingQueue = songs
+        }
+
+        private fun takeQueue(): List<Song>? {
+            val q = pendingQueue
+            pendingQueue = null
+            return q
+        }
 
         var isRunning = false
             private set
@@ -120,7 +134,12 @@ class MusicService : LifecycleService() {
 
     private fun registerNoisyReceiver() {
         if (noisyReceiverRegistered) return
-        registerReceiver(noisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
+        val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(noisyReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(noisyReceiver, filter)
+        }
         noisyReceiverRegistered = true
     }
 
@@ -131,6 +150,44 @@ class MusicService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        try {
+            handleStartCommand(intent)
+        } catch (e: Exception) {
+            // A single bad command must never kill the player service
+        }
+        // startForegroundService() (API 26+) requires startForeground() within
+        // five seconds or the system crashes the app. If the service was
+        // started after a notification tap with no song loaded yet, promote
+        // it to a placeholder foreground right away.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            intent?.action != ACTION_STOP && !foregroundPromoted
+        ) {
+            promoteForeground()
+        }
+        return START_STICKY
+    }
+
+    private var foregroundPromoted = false
+
+    private fun promoteForeground() {
+        if (foregroundPromoted) return
+        foregroundPromoted = true
+        currentSong?.let {
+            showNotification()
+            return
+        }
+        // No song yet - show an empty placeholder so startForeground is called on time
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("JNet Music Player")
+            .setContentText("Preparing playback\u2026")
+            .setSmallIcon(R.drawable.ic_music_note)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .build()
+        startForeground(NOTIFICATION_ID, notification)
+    }
+
+    private fun handleStartCommand(intent: Intent?) {
         val action = intent?.action
         when (action) {
             ACTION_PLAY_PAUSE -> togglePlayPause()
@@ -145,8 +202,20 @@ class MusicService : LifecycleService() {
                     stopForeground(true)
                 }
             }
+            ACTION_PLAY_QUEUE -> {
+                // Initial play request with queue passed in-process
+                val songList = takeQueue()
+                if (songList != null && songList.isNotEmpty()) {
+                    val index = intent?.getIntExtra(EXTRA_SONG_INDEX, 0) ?: 0
+                    songs = songList
+                    currentIndex = index.coerceIn(0, songList.size - 1)
+                    shuffleEnabled = intent?.getBooleanExtra(EXTRA_SHUFFLE, false) ?: false
+                    if (shuffleEnabled) buildShuffleList()
+                    playSong(currentIndex)
+                }
+            }
             else -> {
-                // Initial play request
+                // Backwards-compatible fallback: queue arrives via intent parcel
                 if (intent != null && intent.hasExtra(EXTRA_SONG_LIST)) {
                     @Suppress("DEPRECATION")
                     val songList = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -164,7 +233,6 @@ class MusicService : LifecycleService() {
                 }
             }
         }
-        return START_STICKY
     }
 
     override fun onDestroy() {
@@ -199,7 +267,15 @@ class MusicService : LifecycleService() {
             val serviceIntent = Intent(context, MusicService::class.java).apply {
                 action = intent.action
             }
-            context.startService(serviceIntent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(serviceIntent)
+                } else {
+                    context.startService(serviceIntent)
+                }
+            } catch (e: Exception) {
+                // Never let a notification control restart crash the app
+            }
         }
     }
 
@@ -231,16 +307,21 @@ class MusicService : LifecycleService() {
                 setWakeMode(this@MusicService, PowerManager.PARTIAL_WAKE_LOCK)
                 setDataSource(this@MusicService, Uri.parse(song.path))
                 setOnPreparedListener { mp ->
-                    mp.start()
-                    Companion.isPlaying = true
-                    Companion.duration = mp.duration
-                    applyPlaybackSpeed(mp)
-                    onSongChanged?.invoke(song)
-                    onPlaybackStateChanged?.invoke(true)
-                    updateMediaSession()
-                    startProgressUpdates()
-                    requestAudioFocus()
-                    showNotification()
+                    try {
+                        mp.start()
+                        Companion.isPlaying = true
+                        Companion.duration = mp.duration
+                        applyPlaybackSpeed(mp)
+                        onSongChanged?.invoke(song)
+                        onPlaybackStateChanged?.invoke(true)
+                        updateMediaSession()
+                        startProgressUpdates()
+                        requestAudioFocus()
+                        showNotification()
+                    } catch (e: Exception) {
+                        // Keep the service alive even if one track misbehaves
+                        onPlaybackStateChanged?.invoke(false)
+                    }
                 }
                 setOnCompletionListener {
                     onSongComplete()
@@ -251,7 +332,8 @@ class MusicService : LifecycleService() {
                 }
                 prepareAsync()
             }
-        } catch (e: IOException) {
+        } catch (e: Exception) {
+            // Move on to the next track instead of crashing
             playNext()
         }
     }
@@ -500,19 +582,27 @@ class MusicService : LifecycleService() {
 
     private fun requestAudioFocus() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                .setOnAudioFocusChangeListener { focusChange ->
-                    handleAudioFocusChange(focusChange)
-                }
-                .build()
-            audioManager?.requestAudioFocus(audioFocusRequest!!)
+            try {
+                audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setOnAudioFocusChangeListener { focusChange ->
+                        handleAudioFocusChange(focusChange)
+                    }
+                    .build()
+                audioManager?.requestAudioFocus(audioFocusRequest!!)
+            } catch (e: Exception) {
+                // Some OEMs throw on focus requests; never crash on this
+            }
         } else {
-            @Suppress("DEPRECATION")
-            audioManager?.requestAudioFocus(
-                { focusChange -> handleAudioFocusChange(focusChange) },
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN
-            )
+            try {
+                @Suppress("DEPRECATION")
+                audioManager?.requestAudioFocus(
+                    { focusChange -> handleAudioFocusChange(focusChange) },
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN
+                )
+            } catch (e: Exception) {
+                // ignore
+            }
         }
     }
 

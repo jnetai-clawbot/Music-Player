@@ -1,3 +1,11 @@
+v1.1.1 - Stability & crash reporting fixes
+- Fixed crash when tapping a song to play (song queue now passed in-process instead of via Intent parcel, avoiding TransactionTooLargeException on large libraries)
+- Added global crash reporter: any crash now shows a screen with the error, device info and a "Copy Error" (clipboard) + Share button
+- Persisted crash report shown with copy button on next app launch
+- Hardened playback: corrupt/missing tracks skip instead of crashing
+- Fixed foreground service start on Android 8+/12+ (startForegroundService + placeholder notification) so taps and notification controls never crash
+- Safer audio focus & notification control handling on Samsung and Pixel devices
+
 v1.1.0 - Settings, Scan, Crossfade & About fixes
 - Searchable Settings screen (playback + scanning options)
 - Crossfade between tracks (on by default, configurable duration) - no silence between songs

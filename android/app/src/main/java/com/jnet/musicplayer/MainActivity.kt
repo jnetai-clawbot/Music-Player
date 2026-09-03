@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.tabs.TabLayoutMediator
 import com.jnet.musicplayer.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +69,27 @@ class MainActivity : AppCompatActivity() {
         setupViewPager()
         setupMiniPlayer()
         checkPermissionsAndLoad()
+        showCrashReportIfAny()
+    }
+
+    /** Shows a dialog with the last crash report and a copy-to-clipboard button. */
+    private fun showCrashReportIfAny() {
+        val report = CrashHandler.readLastReport() ?: return
+        CrashHandler.clearReport()
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Previous crash detected")
+            .setMessage("The app crashed last time. Copy the report so we can fix it.")
+            .setPositiveButton("Copy Error") { _, _ ->
+                val clip = android.content.ClipData.newPlainText(
+                    "crash_report",
+                    report
+                )
+                val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.setPrimaryClip(clip)
+                Toast.makeText(this, "Crash report copied to clipboard", Toast.LENGTH_LONG).show()
+            }
+            .setNegativeButton("Dismiss", null)
+            .show()
     }
 
     private fun setupViewPager() {
@@ -149,7 +171,11 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, MusicService::class.java).apply {
             this.action = action
         }
-        startService(intent)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
     }
 
     private fun checkPermissionsAndLoad() {
@@ -204,8 +230,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun playSong(songList: List<Song>, index: Int) {
+        // Pass the queue in-process (companion) instead of through the intent
+        // binder parcel to avoid TransactionTooLargeException on big libraries.
+        MusicService.setQueue(songList)
         val intent = Intent(this, MusicService::class.java).apply {
-            putParcelableArrayListExtra(MusicService.EXTRA_SONG_LIST, ArrayList(songList))
+            action = MusicService.ACTION_PLAY_QUEUE
             putExtra(MusicService.EXTRA_SONG_INDEX, index)
             putExtra(MusicService.EXTRA_SHUFFLE, MusicService.shuffleEnabled)
         }
