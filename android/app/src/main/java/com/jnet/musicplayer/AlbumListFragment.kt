@@ -18,6 +18,7 @@ class AlbumListFragment : Fragment(), MainActivity.SongsConsumer {
     private val binding get() = _binding!!
     private lateinit var adapter: AlbumAdapter
     private var songs: List<Song> = emptyList()
+    private var allAlbums: List<AlbumItem> = emptyList()
     private var registered = false
 
     override fun onCreateView(
@@ -34,6 +35,17 @@ class AlbumListFragment : Fragment(), MainActivity.SongsConsumer {
         }
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
+
+        binding.searchInput.addTextChangedListener(
+            object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    applyFilter(s?.toString().orEmpty())
+                }
+            }
+        )
+
         registerAsConsumer()
         (activity as? MainActivity)?.allSongs?.let { onLibraryChanged(it) }
     }
@@ -63,9 +75,26 @@ class AlbumListFragment : Fragment(), MainActivity.SongsConsumer {
                     .map { (name, list) -> AlbumItem(name, list.first().displayArtist, list.size) }
                     .sortedBy { it.name.lowercase() }
             }
+            allAlbums = albums
+            binding.searchInput.setText("")
             adapter.updateAlbums(albums)
             binding.tvEmpty.visibility = if (albums.isEmpty()) View.VISIBLE else View.GONE
         }
+    }
+
+    private fun applyFilter(query: String) {
+        val q = query.trim().lowercase()
+        val filtered = if (q.isEmpty()) {
+            allAlbums
+        } else {
+            allAlbums.filter {
+                it.name.lowercase().contains(q) ||
+                it.artist.lowercase().contains(q)
+            }
+        }
+        adapter.updateAlbums(filtered)
+        binding.tvEmpty.visibility =
+            if (allAlbums.isEmpty() || filtered.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun showAlbumSongs(albumName: String) {

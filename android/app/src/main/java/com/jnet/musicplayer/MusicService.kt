@@ -274,7 +274,14 @@ class MusicService : LifecycleService() {
                     songs = songList
                     currentIndex = index.coerceIn(0, songList.size - 1)
                     shuffleEnabled = intent?.getBooleanExtra(EXTRA_SHUFFLE, false) ?: false
-                    if (shuffleEnabled) buildShuffleList()
+                    if (settings.get().playRandomEnabled) {
+                        // Play Random: start from a shuffled queue every play
+                        shuffleEnabled = true
+                        buildShuffleList()
+                        currentIndex = shuffledIndices.getOrElse(0) { 0 }
+                    } else if (shuffleEnabled) {
+                        buildShuffleList()
+                    }
                     playSong(currentIndex)
                 }
             }
@@ -354,6 +361,15 @@ class MusicService : LifecycleService() {
         fadeJob = null
         crossfadePlayer?.release()
         crossfadePlayer = null
+
+        // Clear stale state BEFORE starting a new track so the old player's
+        // audio-focus listener can never pause the new one.
+        isPlaying = false
+        progressJob?.cancel()
+        progressJob = null
+        currentPosition = 0
+        abandonAudioFocus()
+        audioFocusRequest = null
 
         currentIndex = index
         val song = songs[currentIndex]

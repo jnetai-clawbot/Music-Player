@@ -11,6 +11,7 @@ data class AppSettings(
     val playbackSpeed: Float = 1f,
     val pauseOnUnplug: Boolean = true,
     val keepScreenOn: Boolean = true,
+    val playRandomEnabled: Boolean = false,
     // Scanning
     val mp3Only: Boolean = true,
     val minTrackLengthSec: Int = 60,
@@ -31,6 +32,7 @@ class SettingsRepository(context: Context) {
         playbackSpeed = prefs.getFloat(KEY_SPEED, 1f),
         pauseOnUnplug = prefs.getBoolean(KEY_PAUSE_UNPLUG, true),
         keepScreenOn = prefs.getBoolean(KEY_KEEP_SCREEN, true),
+        playRandomEnabled = prefs.getBoolean(KEY_PLAY_RANDOM, false),
         mp3Only = prefs.getBoolean(KEY_MP3_ONLY, true),
         minTrackLengthSec = prefs.getInt(KEY_MIN_LENGTH, 60),
         includePaths = getStringList(KEY_INCLUDE),
@@ -46,6 +48,7 @@ class SettingsRepository(context: Context) {
             .putFloat(KEY_SPEED, settings.playbackSpeed)
             .putBoolean(KEY_PAUSE_UNPLUG, settings.pauseOnUnplug)
             .putBoolean(KEY_KEEP_SCREEN, settings.keepScreenOn)
+            .putBoolean(KEY_PLAY_RANDOM, settings.playRandomEnabled)
             .putBoolean(KEY_MP3_ONLY, settings.mp3Only)
             .putInt(KEY_MIN_LENGTH, settings.minTrackLengthSec)
             .putBoolean(KEY_SCAN_ON_STARTUP, settings.scanOnStartup)
@@ -64,6 +67,7 @@ class SettingsRepository(context: Context) {
         const val KEY_SPEED = "playback_speed"
         const val KEY_PAUSE_UNPLUG = "pause_on_unplug"
         const val KEY_KEEP_SCREEN = "keep_screen_on"
+        const val KEY_PLAY_RANDOM = "play_random"
         const val KEY_MP3_ONLY = "mp3_only"
         const val KEY_MIN_LENGTH = "min_track_length"
         const val KEY_INCLUDE = "include_paths"

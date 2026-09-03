@@ -21,6 +21,7 @@ class PlaylistListFragment : Fragment() {
     private val binding get() = _binding!!
     private lateinit var adapter: PlaylistAdapter
     private lateinit var playlistRepo: PlaylistRepository
+    private var allPlaylists: List<Playlist> = emptyList()
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -40,6 +41,16 @@ class PlaylistListFragment : Fragment() {
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
 
+        binding.searchInput.addTextChangedListener(
+            object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    applyFilter(s?.toString().orEmpty())
+                }
+            }
+        )
+
         binding.fabAddPlaylist.setOnClickListener {
             showCreatePlaylistDialog()
         }
@@ -50,9 +61,23 @@ class PlaylistListFragment : Fragment() {
     private fun loadPlaylists() {
         lifecycleScope.launch {
             val playlists = withContext(Dispatchers.IO) { playlistRepo.getAllPlaylists() }
+            allPlaylists = playlists
+            binding.searchInput.setText("")
             adapter.updatePlaylists(playlists)
             binding.tvEmpty.visibility = if (playlists.isEmpty()) View.VISIBLE else View.GONE
         }
+    }
+
+    private fun applyFilter(query: String) {
+        val q = query.trim().lowercase()
+        val filtered = if (q.isEmpty()) {
+            allPlaylists
+        } else {
+            allPlaylists.filter { it.name.lowercase().contains(q) }
+        }
+        adapter.updatePlaylists(filtered)
+        binding.tvEmpty.visibility =
+            if (allPlaylists.isEmpty() || filtered.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun showCreatePlaylistDialog() {

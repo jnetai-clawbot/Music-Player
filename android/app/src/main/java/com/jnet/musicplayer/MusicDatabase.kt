@@ -79,6 +79,9 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlists WHERE id = :id")
     suspend fun getPlaylistById(id: Long): Playlist?
 
+    @Query("SELECT * FROM playlists WHERE name = :name LIMIT 1")
+    suspend fun getPlaylistByName(name: String): Playlist?
+
     @Insert
     suspend fun insertPlaylist(playlist: Playlist): Long
 
@@ -185,6 +188,10 @@ class PlaylistRepository(private val context: Context) {
 
     suspend fun getAllPlaylists(): List<Playlist> = withContext(Dispatchers.IO) {
         dao.getAllPlaylists()
+    }
+
+    suspend fun getPlaylistByIdByName(name: String): Long? = withContext(Dispatchers.IO) {
+        dao.getPlaylistByName(name)?.id
     }
 
     suspend fun createPlaylist(name: String): Long = withContext(Dispatchers.IO) {

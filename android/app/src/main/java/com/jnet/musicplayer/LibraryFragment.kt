@@ -20,6 +20,7 @@ class LibraryFragment : Fragment(), MainActivity.SongsConsumer {
     private val binding get() = _binding!!
     private lateinit var adapter: SongAdapter
     private var songs: List<Song> = emptyList()
+    private var allSongs: List<Song> = emptyList()
     private var registered = false
 
     override fun onCreateView(
@@ -48,6 +49,16 @@ class LibraryFragment : Fragment(), MainActivity.SongsConsumer {
         )
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
+
+        binding.searchInput.addTextChangedListener(
+            object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    applyFilter(s?.toString().orEmpty())
+                }
+            }
+        )
 
         val listener: (Song?) -> Unit = { song ->
             song?.id?.let { adapter.setCurrentPlaying(it) }
@@ -80,8 +91,25 @@ class LibraryFragment : Fragment(), MainActivity.SongsConsumer {
 
     fun updateSongs(newSongs: List<Song>) {
         songs = newSongs
+        allSongs = newSongs
+        binding.searchInput.setText("")
         adapter.updateSongs(newSongs)
         binding.tvEmpty.visibility = if (newSongs.isEmpty()) View.VISIBLE else View.GONE
+    }
+
+    private fun applyFilter(query: String) {
+        val q = query.trim().lowercase()
+        songs = if (q.isEmpty()) {
+            allSongs
+        } else {
+            allSongs.filter {
+                it.displayTitle.lowercase().contains(q) ||
+                it.displayArtist.lowercase().contains(q) ||
+                it.album.lowercase().contains(q)
+            }
+        }
+        adapter.updateSongs(songs)
+        binding.tvEmpty.visibility = if (songs.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun showSongOptionsDialog(song: Song) {

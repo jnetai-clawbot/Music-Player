@@ -16,3 +16,5 @@ Thumbs.db
 
 # Room schemas (generated)
 android/app/schemas/
+# Local backups
+Backup/

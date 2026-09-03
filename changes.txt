@@ -1,3 +1,9 @@
+v1.2.0 - Battle-track switching fix, search, playlist import/export, play random
+- Fixed: playing another track while one is playing now switches immediately (audio-focus conflict fixed - the old track's focus listener could pause the new track)
+- Search box at the top of Songs, Artists, Albums, and Playlists tabs to filter lists
+- Export / Import playlists in Settings (Save To file / Open file). Import skips duplicate songs and duplicate playlists automatically
+- Play Random toggle in Settings (default off) - plays any queue/playlist in random order
+
 v1.1.4 - Fix crashes & add missing options
 - Fixed toolbar: About & Settings menu buttons now open correctly (toolbar set as action bar)
 - Fixed track playback crash/hang on modern Android: songs now play via MediaStore content URI (scoped-storage safe) instead of risky raw file paths, with a fallback to the file path

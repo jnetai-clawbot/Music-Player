@@ -5,17 +5,94 @@ import android.text.Editable
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
 import com.jnet.musicplayer.databinding.ActivitySettingsBinding
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SettingsActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySettingsBinding
     private lateinit var settingsRepo: SettingsRepository
     private lateinit var adapter: SettingsAdapter
+
+    private val createFile = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            lifecycleScope.launch {
+                val playlists = withContext(Dispatchers.IO) {
+                    val repo = playlistRepo
+                    repo.getAllPlaylists().map { p ->
+                        p.name to repo.getPlaylistSongs(p.id).map { it.songId }
+                    }
+                }
+                val json = PlaylistIO.exportJson(playlists)
+                runCatching {
+                    contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) }
+                }
+                Toast.makeText(this, "Playlists exported", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private val openFile = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val text = runCatching {
+                contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            }.getOrNull()
+            if (text.isNullOrBlank()) {
+                Toast.makeText(this, "Could not read file", Toast.LENGTH_SHORT).show()
+            } else {
+                doImport(text)
+            }
+        }
+    }
+
+    private val playlistRepo: PlaylistRepository by lazy { PlaylistRepository(this) }
+
+    private fun exportPlaylists() {
+        createFile.launch("jnet-playlists.json")
+    }
+
+    private fun openFilePicker() {
+        openFile.launch(arrayOf("application/json", "text/plain", "*/*"))
+    }
+
+    private fun importPlaylists() {
+        openFilePicker()
+    }
+
+    private fun doImport(text: String) {
+        lifecycleScope.launch {
+            val library = withContext(Dispatchers.IO) {
+                MusicRepository(this@SettingsActivity).getAllSongs()
+            }
+            val repo = playlistRepo
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    PlaylistIO.importJson(text, repo, library)
+                }.getOrNull()
+            }
+            if (result == null) {
+                Toast.makeText(this@SettingsActivity, "Invalid playlist file", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(
+                    this@SettingsActivity,
+                    "Imported ${result.addedPlaylists} playlist(s), ${result.addedSongs} song(s). " +
+                    "Skipped ${result.skippedDuplicates} duplicate(s).",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -99,6 +176,16 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         rows.add(
+            SettingsRow.Switch(
+                id = "play_random",
+                title = "Play Random",
+                checked = s.playRandomEnabled
+            ) { on ->
+                settingsRepo.save(settingsRepo.get().copy(playRandomEnabled = on))
+            }
+        )
+
+        rows.add(
             SettingsRow.Value(
                 id = "playback_speed",
                 title = "Playback speed",
@@ -155,6 +242,26 @@ class SettingsActivity : AppCompatActivity() {
                 } else {
                     Toast.makeText(this, "Open battery settings to allow playback", Toast.LENGTH_LONG).show()
                 }
+            }
+        )
+
+        rows.add(SettingsRow.Header("Playlists"))
+        rows.add(
+            SettingsRow.Value(
+                id = "export_playlists",
+                title = "Export playlists",
+                value = "Save to a file"
+            ) {
+                exportPlaylists()
+            }
+        )
+        rows.add(
+            SettingsRow.Value(
+                id = "import_playlists",
+                title = "Import playlists",
+                value = "Load from a file (skips duplicates)"
+            ) {
+                importPlaylists()
             }
         )
 
