@@ -73,17 +73,20 @@ class NowPlayingBottomSheet : BottomSheetDialogFragment() {
     private fun registerListeners() {
         if (listenersRegistered) return
         listenersRegistered = true
-        playbackStateListener = { updatePlayPauseButton(it) }
-        positionListener = { pos, dur -> updateSeekbar(pos, dur) }
-        songListener = { updateUI() }
-        MusicService.addOnPlaybackStateChanged(playbackStateListener)
-        MusicService.addOnPositionChanged(positionListener)
+        val playListener = { playing: Boolean -> updatePlayPauseButton(playing) }
+        val posListener = { pos: Int, dur: Int -> updateSeekbar(pos, dur) }
+        val songListener = { _: Song? -> updateUI() }
+        playbackStateListener = playListener
+        positionListener = posListener
+        songChangedListener = songListener
+        MusicService.addOnPlaybackStateChanged(playListener)
+        MusicService.addOnPositionChanged(posListener)
         MusicService.addOnSongChanged(songListener)
     }
 
     private var playbackStateListener: ((Boolean) -> Unit)? = null
     private var positionListener: ((Int, Int) -> Unit)? = null
-    private var songListener: ((Song?) -> Unit)? = null
+    private var songChangedListener: ((Song?) -> Unit)? = null
 
     private fun updatePlayPauseButton(isPlaying: Boolean) {
         binding.btnPlayPause.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
@@ -132,12 +135,12 @@ class NowPlayingBottomSheet : BottomSheetDialogFragment() {
         if (listenersRegistered) {
             playbackStateListener?.let { MusicService.removeOnPlaybackStateChanged(it) }
             positionListener?.let { MusicService.removeOnPositionChanged(it) }
-            songListener?.let { MusicService.removeOnSongChanged(it) }
+            songChangedListener?.let { MusicService.removeOnSongChanged(it) }
         }
         listenersRegistered = false
         playbackStateListener = null
         positionListener = null
-        songListener = null
+        songChangedListener = null
         _binding = null
     }
 }

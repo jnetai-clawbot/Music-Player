@@ -63,23 +63,28 @@ class NowPlayingFragment : Fragment() {
     }
 
     private fun observeServiceState() {
-        songListener = { updateUI() }
-        playbackListener = { updatePlayPauseButton(it) }
-        positionListener = { position, duration -> updateSeekbar(position, duration) }
-        shuffleListener = { updateShuffleButton() }
-        repeatListener = { updateRepeatButton() }
-        MusicService.addOnSongChanged(songListener)
-        MusicService.addOnPlaybackStateChanged(playbackListener)
-        MusicService.addOnPositionChanged(positionListener)
-        MusicService.addOnShuffleChanged(shuffleListener)
-        MusicService.addOnRepeatChanged(repeatListener)
+        val sListener = { _: Song? -> updateUI() }
+        val pListener = { playing: Boolean -> updatePlayPauseButton(playing) }
+        val posListener = { position: Int, duration: Int -> updateSeekbar(position, duration) }
+        val shuffListener = { _: Boolean -> updateShuffleButton() }
+        val repListener = { _: MusicService.RepeatMode -> updateRepeatButton() }
+        songListener = sListener
+        playbackListener = pListener
+        positionListener = posListener
+        shuffleListener = shuffListener
+        repeatListener = repListener
+        MusicService.addOnSongChanged(sListener)
+        MusicService.addOnPlaybackStateChanged(pListener)
+        MusicService.addOnPositionChanged(posListener)
+        MusicService.addOnShuffleChanged(shuffListener)
+        MusicService.addOnRepeatChanged(repListener)
     }
 
     private var songListener: ((Song?) -> Unit)? = null
     private var playbackListener: ((Boolean) -> Unit)? = null
     private var positionListener: ((Int, Int) -> Unit)? = null
     private var shuffleListener: ((Boolean) -> Unit)? = null
-    private var repeatListener: ((RepeatMode) -> Unit)? = null
+    private var repeatListener: ((MusicService.RepeatMode) -> Unit)? = null
 
     private fun updateUI() {
         if (_binding == null) return

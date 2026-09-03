@@ -119,13 +119,15 @@ class MainActivity : AppCompatActivity() {
             sendServiceAction(MusicService.ACTION_NEXT)
         }
 
-        songChangedListener = { updateMiniPlayer() }
-        playbackStateListener = {
+        val songListener = { _: Song? -> updateMiniPlayer() }
+        val stateListener = { _: Boolean ->
             updateMiniPlayerPlayButton()
             applyKeepScreen()
         }
-        MusicService.addOnSongChanged(songChangedListener)
-        MusicService.addOnPlaybackStateChanged(playbackStateListener)
+        songChangedListener = songListener
+        playbackStateListener = stateListener
+        MusicService.addOnSongChanged(songListener)
+        MusicService.addOnPlaybackStateChanged(stateListener)
     }
 
     private var songChangedListener: ((Song?) -> Unit)? = null
