@@ -19,29 +19,13 @@
         android:gravity="center_vertical"
         android:padding="12dp">
 
-        <FrameLayout
+        <!-- Album art (no play overlay) -->
+        <ImageView
+            android:id="@+id/ivAlbumArt"
             android:layout_width="48dp"
-            android:layout_height="48dp">
-
-            <ImageView
-                android:id="@+id/ivAlbumArt"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:scaleType="centerCrop"
-                android:src="@drawable/ic_music_note" />
-
-            <ImageButton
-                android:id="@+id/btnPlay"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:backgroundTint="#80000000"
-                android:src="@drawable/ic_play"
-                android:contentDescription="Play"
-                android:scaleType="center"
-                android:padding="13dp" />
-
-        </FrameLayout>
+            android:layout_height="48dp"
+            android:scaleType="centerCrop"
+            android:src="@drawable/ic_music_note" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -67,6 +51,7 @@
                 android:textSize="13sp"
                 android:maxLines="1"
                 android:ellipsize="end" />
+
         </LinearLayout>
 
         <TextView
@@ -75,8 +60,20 @@
             android:layout_height="wrap_content"
             android:textColor="@color/md_theme_onSurfaceVariant"
             android:textSize="12sp"
+            android:paddingStart="4dp"
             android:paddingEnd="8dp" />
 
+        <!-- Explicit play/pause button (isn't overlapped with art) -->
+        <ImageButton
+            android:id="@+id/btnPlay"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:src="@drawable/ic_play"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Play"
+            android:tint="@color/md_theme_primary" />
+
+        <!-- Add to playlist -->
         <ImageButton
             android:id="@+id/btnAdd"
             android:layout_width="40dp"

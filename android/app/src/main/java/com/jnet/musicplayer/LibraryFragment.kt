@@ -4,10 +4,15 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.jnet.musicplayer.databinding.FragmentLibraryBinding
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class LibraryFragment : Fragment(), MainActivity.SongsConsumer {
 
@@ -85,29 +90,65 @@ class LibraryFragment : Fragment(), MainActivity.SongsConsumer {
 
         val repo = playlistRepo
         val options = mutableListOf<String>().apply {
+            add("Play now")
             add("Add to Playlist")
-            add("Song Details")
+            add("Track info")
+            add("Remove from list")
         }
 
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(song.displayTitle)
             .setItems(options.toTypedArray()) { _, which ->
                 when (which) {
-                    0 -> PlaylistDialogs.showAddToPlaylist(requireContext(), this, repo, song)
-                    1 -> showSongDetails(song)
+                    0 -> mainActivity.playSong(songs, songs.indexOfFirst { it.id == song.id }.coerceAtLeast(0))
+                    1 -> PlaylistDialogs.showAddToPlaylist(requireContext(), this, repo, song)
+                    2 -> showSongDetails(song)
+                    3 -> confirmRemoveSong(song)
                 }
             }
             .show()
     }
 
+    private fun confirmRemoveSong(song: Song) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Remove from list")
+            .setMessage("Remove \"${song.displayTitle}\" from your music list?")
+            .setPositiveButton("Remove") { _, _ ->
+                removeSong(song)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun removeSong(song: Song) {
+        val mainActivity = activity as? MainActivity ?: return
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                mainActivity.musicRepository.removeSongsByPaths(listOf(song.path))
+            }
+            mainActivity.refreshLibraryAfterScan()
+            Toast.makeText(requireContext(), "Song removed from list", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun showSongDetails(song: Song) {
+        val sizeKb = try {
+            val f = java.io.File(song.path)
+            if (f.exists()) (f.length() / 1024).toString() + " KB" else "unknown"
+        } catch (e: Exception) {
+            "unknown"
+        }
+        val type = song.path.substringAfterLast('.').uppercase()
+            .ifBlank { "audio" }
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(song.displayTitle)
             .setMessage(
                 "Artist: ${song.displayArtist}\n" +
                 "Album: ${song.album}\n" +
                 "Duration: ${song.displayDuration}\n" +
-                "Path: ${song.path}"
+                "Type: $type\n" +
+                "Size: $sizeKb\n" +
+                "Location: ${song.path}"
             )
             .setPositiveButton("OK", null)
             .show()

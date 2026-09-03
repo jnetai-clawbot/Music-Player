@@ -28,6 +28,11 @@ class MusicRepository(private val context: Context) {
         songDao.count()
     }
 
+    /** Removes songs from the stored library (e.g. a track the user removed). */
+    suspend fun removeSongsByPaths(paths: List<String>) = withContext(Dispatchers.IO) {
+        if (paths.isNotEmpty()) songDao.deleteByPaths(paths)
+    }
+
     // --- Scanning ---
 
     /**

@@ -18,8 +18,7 @@
             android:layout_height="?attr/actionBarSize"
             android:background="@color/md_theme_surface"
             app:title="JNet Music Player"
-            app:titleTextColor="@color/md_theme_onSurface"
-            app:menu="@menu/main_menu" />
+            app:titleTextColor="@color/md_theme_onSurface" />
 
         <ProgressBar
             android:id="@+id/progressBar"

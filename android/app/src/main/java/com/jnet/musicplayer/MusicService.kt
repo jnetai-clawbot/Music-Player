@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.PowerManager
+import android.provider.MediaStore
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
@@ -32,6 +33,7 @@ class MusicService : LifecycleService() {
         const val EXTRA_SONG_LIST = "song_list"
         const val EXTRA_SONG_INDEX = "song_index"
         const val EXTRA_SHUFFLE = "shuffle"
+        private const val MAX_CONSECUTIVE_ERRORS = 8
 
         @Volatile
         private var pendingQueue: List<Song>? = null
@@ -166,6 +168,7 @@ class MusicService : LifecycleService() {
     private var progressJob: Job? = null
     private val settings by lazy { SettingsRepository(this) }
     private var noisyReceiverRegistered = false
+    private var consecutiveErrors = 0
 
     private val binder = MusicBinder()
 
@@ -356,9 +359,17 @@ class MusicService : LifecycleService() {
         val song = songs[currentIndex]
         currentSong = song
 
-        if (song.path.isBlank()) {
-            // Guard against blank/expired MediaStore paths
-            playNext()
+        // Guard against a whole library of stale entries spinning in a loop.
+        // If we hit too many failures in a row, stop trying instead of ANR.
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            consecutiveErrors = 0
+            stopAfterEnd()
+            return
+        }
+
+        val source = buildSongUri(song)
+        if (source == null) {
+            onTrackFailed()
             return
         }
 
@@ -372,12 +383,13 @@ class MusicService : LifecycleService() {
                         .build()
                 )
                 setWakeMode(this@MusicService, PowerManager.PARTIAL_WAKE_LOCK)
-                setDataSource(this@MusicService, Uri.parse(song.path))
+                setDataSource(this@MusicService, source)
                 setOnPreparedListener { mp ->
                     try {
                         mp.start()
                         Companion.isPlaying = true
                         Companion.duration = mp.duration
+                        consecutiveErrors = 0
                         applyPlaybackSpeed(mp)
                         notifySongChanged(song)
                         notifyPlaybackStateChanged(true)
@@ -388,21 +400,53 @@ class MusicService : LifecycleService() {
                     } catch (e: Exception) {
                         // Keep the service alive even if one track misbehaves
                         notifyPlaybackStateChanged(false)
+                        onTrackFailed()
                     }
                 }
                 setOnCompletionListener {
                     onSongComplete()
                 }
                 setOnErrorListener { _, _, _ ->
-                    playNext()
+                    onTrackFailed()
                     true
                 }
                 prepareAsync()
             }
         } catch (e: Exception) {
-            // Move on to the next track instead of crashing
-            playNext()
+            onTrackFailed()
         }
+    }
+
+    /**
+     * Returns a playable Uri for the song. Uses the MediaStore content Uri
+     * (works under scoped storage on modern Android) with a fallback to the
+     * raw file path. Returns null if neither can be resolved.
+     */
+    private fun buildSongUri(song: Song): Uri? {
+        if (song.id > 0) {
+            try {
+                return ContentUris.withAppendedId(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    song.id
+                )
+            } catch (e: Exception) {
+                // fall through to file path
+            }
+        }
+        val path = song.path
+        if (path.isNotBlank()) {
+            try {
+                return Uri.parse(path)
+            } catch (e: Exception) {
+                // unreachable, but keep it safe
+            }
+        }
+        return null
+    }
+
+    private fun onTrackFailed() {
+        consecutiveErrors += 1
+        playNext()
     }
 
     fun togglePlayPause() {
@@ -513,6 +557,13 @@ class MusicService : LifecycleService() {
         val cp = MediaPlayer()
         crossfadePlayer = cp
         try {
+            val source = buildSongUri(song) ?: run {
+                isCrossfading = false
+                crossfadePlayer = null
+                cp.release()
+                onTrackFailed()
+                return
+            }
             cp.setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
@@ -520,7 +571,7 @@ class MusicService : LifecycleService() {
                     .build()
             )
             cp.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK)
-            cp.setDataSource(this, Uri.parse(song.path))
+            cp.setDataSource(this, source)
             cp.setOnPreparedListener { mp ->
                 if (mp != crossfadePlayer) {
                     mp.release()

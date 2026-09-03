@@ -1,3 +1,11 @@
+v1.1.4 - Fix crashes & add missing options
+- Fixed toolbar: About & Settings menu buttons now open correctly (toolbar set as action bar)
+- Fixed track playback crash/hang on modern Android: songs now play via MediaStore content URI (scoped-storage safe) instead of risky raw file paths, with a fallback to the file path
+- Added an error guard: a run of corrupt/unreadable tracks stops after several attempts instead of looping the whole library and freezing the app
+- Long-press a track now offers: Play now, Add to Playlist, Track info (length, type, size, location), Remove from list
+- Fixed song row layout: the play button no longer overlaps the album art
+- Play/Pause button on each row reflects current playing state
+
 v1.1.3 - Background playback protection
 - Added battery optimisation exemption (REQUEST_IGNORE_BATTERY_OPTIMIZATIONS) with an in-app prompt and a Settings row ("Keep playing in the background")
 - Opens the system "Allow" screen so Samsung/Pixel battery managers don't pause music

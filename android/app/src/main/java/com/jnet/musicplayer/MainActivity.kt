@@ -61,6 +61,7 @@ class MainActivity : AppCompatActivity() {
         companionInstance = this
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        setSupportActionBar(binding.toolbar)
 
         musicRepository = MusicRepository(this)
         playlistRepository = PlaylistRepository(this)
