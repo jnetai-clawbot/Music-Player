@@ -44,8 +44,9 @@ class LibraryFragment : Fragment(), MainActivity.SongsConsumer {
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
 
-        val listener = { song: Song? ->
+        val listener: (Song?) -> Unit = { song ->
             song?.id?.let { adapter.setCurrentPlaying(it) }
+            Unit
         }
         songChangedListener = listener
         MusicService.addOnSongChanged(listener)
