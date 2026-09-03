@@ -77,6 +77,7 @@ class MusicService : LifecycleService() {
     enum class RepeatMode { OFF, ALL, ONE }
 
     private var mediaPlayer: MediaPlayer? = null
+    private var mediaSession: MediaSessionCompat? = null
     private var crossfadePlayer: MediaPlayer? = null
     private var isCrossfading = false
     private var fadeJob: Job? = null

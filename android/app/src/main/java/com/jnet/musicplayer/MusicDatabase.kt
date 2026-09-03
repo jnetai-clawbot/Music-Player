@@ -2,6 +2,7 @@ package com.jnet.musicplayer
 
 import android.content.Context
 import androidx.room.*
+import androidx.room.migration.Migration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
